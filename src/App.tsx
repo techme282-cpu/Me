@@ -17,6 +17,8 @@ import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
 import CreateGroup from "./pages/CreateGroup";
+import GroupChat from "./pages/GroupChat";
+import GroupSettings from "./pages/GroupSettings";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +37,8 @@ const App = () => (
             <Route path="/create" element={<Create />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/chat/:partnerId" element={<ChatRoom />} />
+            <Route path="/group/:groupId" element={<GroupChat />} />
+            <Route path="/group/:groupId/settings" element={<GroupSettings />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/user/:userId" element={<UserProfile />} />
             <Route path="/notifications" element={<Notifications />} />
