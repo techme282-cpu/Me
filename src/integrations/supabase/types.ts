@@ -76,6 +76,7 @@ export type Database = {
           group_id: string
           id: string
           role: string | null
+          status: string | null
           user_id: string
         }
         Insert: {
@@ -83,6 +84,7 @@ export type Database = {
           group_id: string
           id?: string
           role?: string | null
+          status?: string | null
           user_id: string
         }
         Update: {
@@ -90,6 +92,7 @@ export type Database = {
           group_id?: string
           id?: string
           role?: string | null
+          status?: string | null
           user_id?: string
         }
         Relationships: [
@@ -104,33 +107,42 @@ export type Database = {
       }
       groups: {
         Row: {
+          admin_only_edit: boolean | null
           avatar_url: string | null
           created_at: string | null
           created_by: string
           description: string | null
           id: string
+          invite_code: string | null
           is_open: boolean | null
           name: string
+          require_approval: boolean | null
           status: string | null
         }
         Insert: {
+          admin_only_edit?: boolean | null
           avatar_url?: string | null
           created_at?: string | null
           created_by: string
           description?: string | null
           id?: string
+          invite_code?: string | null
           is_open?: boolean | null
           name: string
+          require_approval?: boolean | null
           status?: string | null
         }
         Update: {
+          admin_only_edit?: boolean | null
           avatar_url?: string | null
           created_at?: string | null
           created_by?: string
           description?: string | null
           id?: string
+          invite_code?: string | null
           is_open?: boolean | null
           name?: string
+          require_approval?: boolean | null
           status?: string | null
         }
         Relationships: []

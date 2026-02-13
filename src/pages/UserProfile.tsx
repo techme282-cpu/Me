@@ -46,10 +46,13 @@ export default function UserProfile() {
     if (!p?.is_private || (user && (followStatus === "accepted" || userId === user.id))) {
       const { data: postsData } = await supabase
         .from("posts")
-        .select("*, profiles!posts_user_id_fkey(username, display_name, avatar_url)")
+        .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
-      setPosts(postsData || []);
+      setPosts((postsData || []).map((post: any) => ({
+        ...post,
+        profiles: p ? { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url } : null,
+      })));
     }
   };
 

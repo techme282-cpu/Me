@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, Settings, Reply, Trash2, X } from "lucide-react";
+import { ArrowLeft, Send, MoreVertical, Reply, Trash2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -34,8 +34,8 @@ export default function GroupChat() {
 
   const fetchMembers = async () => {
     const { data } = await supabase.from("group_members").select("*").eq("group_id", groupId!);
-    setMembers(data || []);
-    // fetch profiles for members
+    const active = (data || []).filter((m) => m.status !== "pending");
+    setMembers(active);
     if (data?.length) {
       const userIds = data.map((m) => m.user_id);
       const { data: profs } = await supabase.from("profiles").select("*").in("user_id", userIds);
@@ -58,7 +58,6 @@ export default function GroupChat() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
 
-  // Realtime
   useEffect(() => {
     if (!groupId) return;
     const channel = supabase
@@ -91,13 +90,13 @@ export default function GroupChat() {
     toast.success("Message supprimé");
   };
 
-  const replyMessage = messages.find((m) => m.id === replyTo?.id);
-
   const isMember = members.some((m) => m.user_id === user?.id);
+  const myMembership = members.find((m) => m.user_id === user?.id);
+  const isAdmin = myMembership?.role === "admin" || myMembership?.role === "owner";
+  const canSend = isMember && (group?.is_open || isAdmin);
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
         <div className="flex items-center gap-3 px-4 h-14 max-w-lg mx-auto">
           <button onClick={() => navigate("/chat")} className="text-muted-foreground hover:text-foreground">
@@ -111,34 +110,38 @@ export default function GroupChat() {
             <p className="text-xs text-muted-foreground">{members.length} membre{members.length > 1 ? "s" : ""}</p>
           </div>
           <button onClick={() => navigate(`/group/${groupId}/settings`)} className="text-muted-foreground hover:text-foreground">
-            <Settings size={20} />
+            <MoreVertical size={20} />
           </button>
         </div>
       </header>
 
-      {/* Messages */}
       <main className="flex-1 overflow-y-auto px-4 py-4 max-w-lg mx-auto w-full space-y-2">
         {messages.map((msg) => {
           const mine = msg.sender_id === user?.id;
           const sender = profiles[msg.sender_id];
+          const senderMembership = members.find((m) => m.user_id === msg.sender_id);
           const replied = msg.reply_to ? messages.find((m) => m.id === msg.reply_to) : null;
           return (
             <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] group relative`}>
-                {/* Reply preview */}
                 {replied && (
                   <div className="bg-muted/50 border-l-2 border-primary rounded-t-lg px-3 py-1.5 text-xs text-muted-foreground mb-0.5 truncate">
                     <span className="font-semibold text-primary">{profiles[replied.sender_id]?.username || "?"}</span>: {replied.content}
                   </div>
                 )}
                 <div className={`px-4 py-2.5 rounded-2xl text-sm ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-secondary text-foreground rounded-bl-md"}`}>
-                  {!mine && <p className="text-xs font-semibold text-primary mb-0.5">{sender?.display_name || sender?.username || "?"}</p>}
+                  {!mine && (
+                    <p className="text-xs font-semibold text-primary mb-0.5 flex items-center gap-1">
+                      {sender?.display_name || sender?.username || "?"}
+                      {senderMembership?.role === "owner" && <span className="text-yellow-500 text-[10px]">👑</span>}
+                      {senderMembership?.role === "admin" && <span className="text-[10px] opacity-70">Admin</span>}
+                    </p>
+                  )}
                   <p>{msg.content}</p>
                   <p className={`text-[10px] mt-1 ${mine ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                     {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
                   </p>
                 </div>
-                {/* Actions on hover */}
                 <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
                   <button onClick={() => setReplyTo(msg)} className="p-1 rounded bg-background/80 text-muted-foreground hover:text-foreground">
                     <Reply size={12} />
@@ -156,7 +159,6 @@ export default function GroupChat() {
         <div ref={bottomRef} />
       </main>
 
-      {/* Reply bar */}
       {replyTo && (
         <div className="glass border-t border-border px-4 py-2 max-w-lg mx-auto w-full flex items-center gap-2">
           <div className="flex-1 text-xs text-muted-foreground truncate">
@@ -166,22 +168,27 @@ export default function GroupChat() {
         </div>
       )}
 
-      {/* Input */}
       {isMember ? (
-        <div className="sticky bottom-0 glass border-t border-border p-3">
-          <div className="flex gap-2 max-w-lg mx-auto">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              className="flex-1 bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-              placeholder="Écrire un message..."
-            />
-            <button onClick={sendMessage} disabled={!input.trim()} className="gradient-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-50">
-              <Send size={18} />
-            </button>
+        canSend ? (
+          <div className="sticky bottom-0 glass border-t border-border p-3">
+            <div className="flex gap-2 max-w-lg mx-auto">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                className="flex-1 bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                placeholder="Écrire un message..."
+              />
+              <button onClick={sendMessage} disabled={!input.trim()} className="gradient-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-50">
+                <Send size={18} />
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="sticky bottom-0 glass border-t border-border p-4 text-center">
+            <p className="text-sm text-muted-foreground">Seuls les admins peuvent envoyer des messages</p>
+          </div>
+        )
       ) : (
         <div className="sticky bottom-0 glass border-t border-border p-4 text-center">
           <p className="text-sm text-muted-foreground">Tu n'es pas membre de ce groupe</p>
