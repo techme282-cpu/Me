@@ -19,6 +19,9 @@ import Settings from "./pages/Settings";
 import CreateGroup from "./pages/CreateGroup";
 import GroupChat from "./pages/GroupChat";
 import GroupSettings from "./pages/GroupSettings";
+import JoinGroup from "./pages/JoinGroup";
+import Loop from "./pages/Loop";
+import PostDetail from "./pages/PostDetail";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +42,9 @@ const App = () => (
             <Route path="/chat/:partnerId" element={<ChatRoom />} />
             <Route path="/group/:groupId" element={<GroupChat />} />
             <Route path="/group/:groupId/settings" element={<GroupSettings />} />
+            <Route path="/group/join/:inviteCode" element={<JoinGroup />} />
+            <Route path="/post/:postId" element={<PostDetail />} />
+            <Route path="/loop" element={<Loop />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/user/:userId" element={<UserProfile />} />
             <Route path="/notifications" element={<Notifications />} />

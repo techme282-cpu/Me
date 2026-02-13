@@ -17,7 +17,7 @@ export default function Explore() {
   const fetchTrending = async () => {
     const { data } = await supabase
       .from("posts")
-      .select("*, profiles!posts_user_id_fkey(username, display_name, avatar_url)")
+      .select("*")
       .order("like_count", { ascending: false })
       .limit(20);
     setTrending(data || []);
