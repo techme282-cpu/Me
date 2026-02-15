@@ -6,6 +6,7 @@ import { ArrowLeft, Send, MoreVertical, Reply, Trash2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
+import LinkifyText from "@/components/LinkifyText";
 
 export default function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -141,7 +142,7 @@ export default function GroupChat() {
                       {senderMembership?.role === "admin" && <span className="text-[10px] opacity-70">Admin</span>}
                     </p>
                   )}
-                  <p>{msg.content}</p>
+                  <LinkifyText text={msg.content} className="break-words" />
                   <p className={`text-[10px] mt-1 ${mine ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                     {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
                   </p>

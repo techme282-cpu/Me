@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CommentsSheet from "@/components/CommentsSheet";
+import LinkifyText from "@/components/LinkifyText";
 
 interface PostCardProps {
   post: {
@@ -162,7 +163,7 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
         {/* Content */}
         {post.content && (
           <div className="px-4 pt-3">
-            <p className="text-sm text-foreground leading-relaxed">{post.content}</p>
+            <LinkifyText text={post.content} className="text-sm text-foreground leading-relaxed" />
           </div>
         )}
 
