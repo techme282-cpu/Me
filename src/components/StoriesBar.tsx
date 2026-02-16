@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, X, Trash2 } from "lucide-react";
+import { Plus, X, Trash2, Heart } from "lucide-react";
 import { toast } from "sonner";
 
 interface Story {
@@ -23,7 +23,9 @@ export default function StoriesBar() {
   const [stories, setStories] = useState<Story[]>([]);
   const [viewingStory, setViewingStory] = useState<Story | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showBigHeart, setShowBigHeart] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const lastTapRef = useRef(0);
 
   useEffect(() => {
     fetchStories();
@@ -46,7 +48,6 @@ export default function StoriesBar() {
       .in("user_id", userIds);
 
     const profMap = new Map((profs || []).map((p: any) => [p.user_id, p]));
-    // Group by user - show only latest per user
     const seen = new Set<string>();
     const unique: Story[] = [];
     for (const s of data) {
@@ -94,6 +95,15 @@ export default function StoriesBar() {
     setViewingStory(null);
     fetchStories();
   };
+
+  const handleDoubleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      setShowBigHeart(true);
+      setTimeout(() => setShowBigHeart(false), 800);
+    }
+    lastTapRef.current = now;
+  }, []);
 
   const myStory = stories.find((s) => s.user_id === user?.id);
   const otherStories = stories.filter((s) => s.user_id !== user?.id);
@@ -175,11 +185,16 @@ export default function StoriesBar() {
               </button>
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center p-4">
+          <div className="flex-1 flex items-center justify-center p-4 relative select-none" onClick={handleDoubleTap}>
             {viewingStory.media_type === "video" ? (
               <video src={viewingStory.media_url} className="max-w-full max-h-full rounded-xl object-contain" autoPlay controls playsInline />
             ) : (
-              <img src={viewingStory.media_url} className="max-w-full max-h-full rounded-xl object-contain" alt="" />
+              <img src={viewingStory.media_url} className="max-w-full max-h-full rounded-xl object-contain" alt="" draggable={false} />
+            )}
+            {showBigHeart && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <Heart size={80} className="fill-accent text-accent animate-like-pop drop-shadow-lg" />
+              </div>
             )}
           </div>
         </div>

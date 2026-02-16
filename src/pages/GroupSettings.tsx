@@ -86,12 +86,10 @@ export default function GroupSettings() {
     if (!file || !user || !groupId) return;
     if (!file.type.startsWith("image/")) { toast.error("Image uniquement"); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error("Max 5MB"); return; }
-
     const ext = file.name.split(".").pop();
     const path = `${user.id}/group_${groupId}_${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("media").upload(path, file);
     if (error) { toast.error("Erreur upload"); return; }
-
     const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
     await supabase.from("groups").update({ avatar_url: urlData.publicUrl }).eq("id", groupId);
     setGroup((g: any) => ({ ...g, avatar_url: urlData.publicUrl }));
@@ -145,9 +143,23 @@ export default function GroupSettings() {
     fetchMembers();
   };
 
+  // Send system message to group
+  const sendSystemMessage = async (content: string) => {
+    if (!groupId || !user) return;
+    await supabase.from("messages").insert({
+      sender_id: user.id,
+      group_id: groupId,
+      content: `[SYSTEM] ${content}`,
+    });
+  };
+
   const promoteToAdmin = async (userId: string) => {
+    const prof = profiles[userId];
     await supabase.from("group_members").update({ role: "admin" }).eq("group_id", groupId!).eq("user_id", userId);
     toast.success("Promu admin");
+    // Send system message
+    const displayName = prof?.display_name || prof?.username || "Utilisateur";
+    await sendSystemMessage(`🛡️ ${displayName} est désormais admin`);
     setMemberMenu(null);
     fetchMembers();
   };
@@ -155,8 +167,11 @@ export default function GroupSettings() {
   const demoteToMember = async (userId: string) => {
     const target = members.find((m: any) => m.user_id === userId);
     if (target?.role === "owner") { toast.error("Impossible"); return; }
+    const prof = profiles[userId];
     await supabase.from("group_members").update({ role: "member" }).eq("group_id", groupId!).eq("user_id", userId);
     toast.success("Rétrogradé");
+    const displayName = prof?.display_name || prof?.username || "Utilisateur";
+    await sendSystemMessage(`${displayName} n'est plus admin`);
     setMemberMenu(null);
     fetchMembers();
   };
@@ -204,11 +219,17 @@ export default function GroupSettings() {
     setSearchResults((data || []).filter((p: any) => !memberIds.includes(p.user_id) && !bannedIds.has(p.user_id)));
   };
 
-  const addMember = async (userId: string) => {
-    if (bannedIds.has(userId)) { toast.error("Cet utilisateur est banni de ce groupe"); return; }
-    await supabase.from("group_members").insert({ group_id: groupId!, user_id: userId, role: "member", status: "active" });
+  const addMember = async (targetUserId: string) => {
+    if (bannedIds.has(targetUserId)) { toast.error("Cet utilisateur est banni de ce groupe"); return; }
+    await supabase.from("group_members").insert({ group_id: groupId!, user_id: targetUserId, role: "member", status: "active" });
     toast.success("Membre ajouté");
-    setSearchResults((prev) => prev.filter((p: any) => p.user_id !== userId));
+    // Send system message about who added them
+    const adderProfile = user ? profiles[user.id] : null;
+    const addedProfile = searchResults.find((p: any) => p.user_id === targetUserId);
+    const adderName = adderProfile?.display_name || adderProfile?.username || "Un admin";
+    const addedName = addedProfile?.display_name || addedProfile?.username || "Utilisateur";
+    await sendSystemMessage(`${adderName} a ajouté ${addedName} au groupe`);
+    setSearchResults((prev) => prev.filter((p: any) => p.user_id !== targetUserId));
     fetchMembers();
   };
 
@@ -480,20 +501,23 @@ export default function GroupSettings() {
                           <MoreVertical size={16} />
                         </button>
                         {memberMenu === m.id && (
-                          <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-lg py-1 w-48">
-                            {m.role === "member" ? (
-                              <button onClick={() => promoteToAdmin(m.user_id)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-foreground">
-                                <Shield size={14} /> Nommer admin
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setMemberMenu(null)} />
+                            <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-lg py-1 w-48">
+                              {m.role === "member" ? (
+                                <button onClick={() => promoteToAdmin(m.user_id)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-foreground">
+                                  <Shield size={14} /> Nommer admin
+                                </button>
+                              ) : (
+                                <button onClick={() => demoteToMember(m.user_id)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-foreground">
+                                  <Shield size={14} /> Rétrograder
+                                </button>
+                              )}
+                              <button onClick={() => removeMember(m.user_id, true)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-destructive">
+                                <UserMinus size={14} /> Supprimer (bannir)
                               </button>
-                            ) : (
-                              <button onClick={() => demoteToMember(m.user_id)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-foreground">
-                                <Shield size={14} /> Rétrograder
-                              </button>
-                            )}
-                            <button onClick={() => removeMember(m.user_id, true)} className="w-full px-4 py-2 text-sm text-left hover:bg-secondary flex items-center gap-2 text-destructive">
-                              <UserMinus size={14} /> Supprimer (bannir)
-                            </button>
-                          </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     )}

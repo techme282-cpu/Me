@@ -19,6 +19,7 @@ export default function GroupChat() {
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
     if (groupId && user) {
@@ -56,7 +57,11 @@ export default function GroupChat() {
       .order("created_at", { ascending: true })
       .limit(300);
     setMessages(data || []);
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    isInitialLoad.current = true;
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      isInitialLoad.current = false;
+    }, 100);
   };
 
   useEffect(() => {
@@ -66,14 +71,17 @@ export default function GroupChat() {
       .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `group_id=eq.${groupId}` }, (payload) => {
         if (payload.eventType === "INSERT") {
           setMessages((prev) => [...prev, payload.new as any]);
-          bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+          // Only auto-scroll for own messages
+          if ((payload.new as any).sender_id === user?.id) {
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+          }
         } else if (payload.eventType === "UPDATE") {
           setMessages((prev) => prev.map((m) => (m.id === (payload.new as any).id ? (payload.new as any) : m)));
         }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [groupId]);
+  }, [groupId, user?.id]);
 
   const sendMessage = async () => {
     if (!input.trim() || !user || !groupId) return;
@@ -83,6 +91,7 @@ export default function GroupChat() {
     if (replyTo) insertData.reply_to = replyTo.id;
     setReplyTo(null);
     await supabase.from("messages").insert(insertData);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
 
   const deleteMessage = async (msgId: string) => {
@@ -96,9 +105,18 @@ export default function GroupChat() {
   const isAdmin = myMembership?.role === "admin" || myMembership?.role === "owner";
   const canSend = isMember && (group?.is_open || isAdmin);
 
+  // Check if message is a system message
+  const isSystemMessage = (msg: any) => {
+    return typeof msg.content === "string" && msg.content.startsWith("[SYSTEM]");
+  };
+
+  const getSystemText = (msg: any) => {
+    return msg.content.replace("[SYSTEM] ", "");
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-40 glass border-b border-border">
+      <header className="sticky top-0 z-40 glass border-b border-border shrink-0">
         <div className="flex items-center gap-3 px-4 h-14 max-w-lg mx-auto">
           <button onClick={() => navigate("/chat")} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft size={22} />
@@ -122,6 +140,15 @@ export default function GroupChat() {
 
       <main className="flex-1 overflow-y-auto px-4 py-4 max-w-lg mx-auto w-full space-y-2">
         {messages.map((msg) => {
+          // System messages
+          if (isSystemMessage(msg)) {
+            return (
+              <div key={msg.id} className="flex justify-center py-1">
+                <p className="text-xs text-muted-foreground bg-secondary/50 px-3 py-1 rounded-full">{getSystemText(msg)}</p>
+              </div>
+            );
+          }
+
           const mine = msg.sender_id === user?.id;
           const sender = profiles[msg.sender_id];
           const senderMembership = members.find((m) => m.user_id === msg.sender_id);
@@ -175,7 +202,7 @@ export default function GroupChat() {
 
       {isMember ? (
         canSend ? (
-          <div className="sticky bottom-0 glass border-t border-border p-3">
+          <div className="sticky bottom-0 glass border-t border-border p-3 shrink-0">
             <div className="flex gap-2 max-w-lg mx-auto">
               <input
                 value={input}
@@ -190,12 +217,12 @@ export default function GroupChat() {
             </div>
           </div>
         ) : (
-          <div className="sticky bottom-0 glass border-t border-border p-4 text-center">
+          <div className="sticky bottom-0 glass border-t border-border p-4 text-center shrink-0">
             <p className="text-sm text-muted-foreground">Seuls les admins peuvent envoyer des messages</p>
           </div>
         )
       ) : (
-        <div className="sticky bottom-0 glass border-t border-border p-4 text-center">
+        <div className="sticky bottom-0 glass border-t border-border p-4 text-center shrink-0">
           <p className="text-sm text-muted-foreground">Tu n'es pas membre de ce groupe</p>
         </div>
       )}

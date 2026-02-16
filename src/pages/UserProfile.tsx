@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import PostCard from "@/components/PostCard";
-import { ArrowLeft, Lock, Flag, UserPlus, UserMinus } from "lucide-react";
+import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, Heart } from "lucide-react";
 import { toast } from "sonner";
 
 export default function UserProfile() {
@@ -12,16 +12,20 @@ export default function UserProfile() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
+  const [favorites, setFavorites] = useState<any[]>([]);
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followStatus, setFollowStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"posts" | "favorites">("posts");
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (userId) fetch();
+    if (userId) fetchData();
   }, [userId]);
 
-  const fetch = async () => {
+  const fetchData = async () => {
     if (!userId) return;
     const { data: p } = await supabase.from("profiles").select("*").eq("user_id", userId).single();
     setProfile(p);
@@ -33,17 +37,18 @@ export default function UserProfile() {
     setFollowers(fc || 0);
     setFollowing(fgc || 0);
 
-    // Check follow status
+    let currentFollowStatus: string | null = null;
     if (user) {
       const { data: f } = await supabase.from("follows").select("status").eq("follower_id", user.id).eq("following_id", userId).single();
       if (f) {
         setIsFollowing(f.status === "accepted");
         setFollowStatus(f.status);
+        currentFollowStatus = f.status;
       }
     }
 
-    // Posts (only if public or following)
-    if (!p?.is_private || (user && (followStatus === "accepted" || userId === user.id))) {
+    const canSee = !p?.is_private || (user && (currentFollowStatus === "accepted" || userId === user.id));
+    if (canSee) {
       const { data: postsData } = await supabase
         .from("posts")
         .select("*")
@@ -53,6 +58,32 @@ export default function UserProfile() {
         ...post,
         profiles: p ? { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url } : null,
       })));
+
+      // Fetch favorites
+      const { data: favData } = await supabase
+        .from("post_favorites")
+        .select("post_id")
+        .eq("user_id", userId);
+      if (favData?.length) {
+        const postIds = favData.map((f: any) => f.post_id);
+        const { data: favPosts } = await supabase.from("posts").select("*").in("id", postIds).order("created_at", { ascending: false });
+        if (favPosts?.length) {
+          const uids = [...new Set(favPosts.map((fp: any) => fp.user_id))];
+          const { data: profs } = await supabase.from("profiles").select("user_id, username, display_name, avatar_url").in("user_id", uids);
+          const profMap = new Map((profs || []).map((pr: any) => [pr.user_id, pr]));
+          setFavorites(favPosts.map((fp: any) => ({ ...fp, profiles: profMap.get(fp.user_id) || null })));
+        }
+      }
+
+      // Fetch current user's likes/saves for display
+      if (user) {
+        const [likes, saves] = await Promise.all([
+          supabase.from("post_likes").select("post_id").eq("user_id", user.id),
+          supabase.from("post_favorites").select("post_id").eq("user_id", user.id),
+        ]);
+        setLikedIds(new Set((likes.data || []).map((l: any) => l.post_id)));
+        setSavedIds(new Set((saves.data || []).map((s: any) => s.post_id)));
+      }
     }
   };
 
@@ -81,6 +112,8 @@ export default function UserProfile() {
 
   if (!profile) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 
+  const displayPosts = activeTab === "posts" ? posts : favorites;
+
   return (
     <div className="min-h-screen pb-6">
       <header className="sticky top-0 z-40 glass border-b border-border">
@@ -97,12 +130,8 @@ export default function UserProfile() {
           </div>
           <div className="flex gap-6 text-center">
             <div><p className="font-bold text-foreground">{posts.length}</p><p className="text-xs text-muted-foreground">Posts</p></div>
-            {!profile.is_private && (
-              <>
-                <div><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></div>
-                <div><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></div>
-              </>
-            )}
+            <div><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></div>
+            <div><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></div>
           </div>
         </div>
 
@@ -129,9 +158,40 @@ export default function UserProfile() {
             <p className="text-muted-foreground">Ce compte est privé</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {posts.map((post) => <PostCard key={post.id} post={post} />)}
-          </div>
+          <>
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+              <button
+                onClick={() => setActiveTab("posts")}
+                className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 border-b-2 transition-all ${activeTab === "posts" ? "text-primary border-primary" : "text-muted-foreground border-transparent"}`}
+              >
+                <Grid3X3 size={16} /> Posts
+              </button>
+              <button
+                onClick={() => setActiveTab("favorites")}
+                className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 border-b-2 transition-all ${activeTab === "favorites" ? "text-primary border-primary" : "text-muted-foreground border-transparent"}`}
+              >
+                <Bookmark size={16} /> Favoris
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {displayPosts.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-8">
+                  {activeTab === "posts" ? "Aucune publication" : "Aucun favori"}
+                </p>
+              ) : (
+                displayPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    isLiked={likedIds.has(post.id)}
+                    isSaved={savedIds.has(post.id)}
+                  />
+                ))
+              )}
+            </div>
+          </>
         )}
       </main>
     </div>

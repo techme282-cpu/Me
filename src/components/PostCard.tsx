@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, Flag, Trash2, X } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, Flag, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
@@ -36,30 +36,68 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
   const [likeCount, setLikeCount] = useState(post.like_count);
   const [commentCount, setCommentCount] = useState(post.comment_count);
   const [animateLike, setAnimateLike] = useState(false);
+  const [showBigHeart, setShowBigHeart] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [liking, setLiking] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const lastTapRef = useRef(0);
 
   const isOwner = user?.id === post.user_id;
 
-  const handleLike = async () => {
-    if (!user) return;
+  const handleLike = useCallback(async () => {
+    if (!user || liking) return;
+    setLiking(true);
     setAnimateLike(true);
     setTimeout(() => setAnimateLike(false), 300);
 
+    try {
+      if (liked) {
+        setLiked(false);
+        setLikeCount((c) => c - 1);
+        await supabase.from("post_likes").delete().eq("user_id", user.id).eq("post_id", post.id);
+        await supabase.from("posts").update({ like_count: Math.max(0, likeCount - 1) }).eq("id", post.id);
+      } else {
+        setLiked(true);
+        setLikeCount((c) => c + 1);
+        await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
+        await supabase.from("posts").update({ like_count: likeCount + 1 }).eq("id", post.id);
+      }
+    } finally {
+      setLiking(false);
+    }
+  }, [user, liked, liking, likeCount, post.id]);
+
+  const handleDoubleTapLike = useCallback(async () => {
+    if (!user || liking) return;
+    // Only like on double tap, never unlike
     if (liked) {
-      setLiked(false);
-      setLikeCount((c) => c - 1);
-      await supabase.from("post_likes").delete().eq("user_id", user.id).eq("post_id", post.id);
-      await supabase.from("posts").update({ like_count: likeCount - 1 }).eq("id", post.id);
-    } else {
-      setLiked(true);
-      setLikeCount((c) => c + 1);
+      setShowBigHeart(true);
+      setTimeout(() => setShowBigHeart(false), 800);
+      return;
+    }
+    setLiking(true);
+    setShowBigHeart(true);
+    setAnimateLike(true);
+    setTimeout(() => { setShowBigHeart(false); setAnimateLike(false); }, 800);
+    setLiked(true);
+    setLikeCount((c) => c + 1);
+    try {
       await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
       await supabase.from("posts").update({ like_count: likeCount + 1 }).eq("id", post.id);
+    } finally {
+      setLiking(false);
     }
-  };
+  }, [user, liked, liking, likeCount, post.id]);
+
+  const handleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      handleDoubleTapLike();
+    }
+    lastTapRef.current = now;
+  }, [handleDoubleTapLike]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -148,22 +186,37 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
           </div>
         </div>
 
-        {/* Media */}
+        {/* Media with double tap */}
         {post.media_url && post.media_type === "image" && (
-          <div className="w-full bg-secondary">
-            <img src={post.media_url} alt="" className="w-full max-h-[600px] object-contain" loading="lazy" />
+          <div className="w-full bg-secondary relative select-none" onClick={handleTap}>
+            <img src={post.media_url} alt="" className="w-full max-h-[600px] object-contain" loading="lazy" draggable={false} />
+            {showBigHeart && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <Heart size={80} className="fill-accent text-accent animate-like-pop drop-shadow-lg" />
+              </div>
+            )}
           </div>
         )}
         {post.media_url && post.media_type === "video" && (
-          <div className="w-full bg-secondary">
+          <div className="w-full bg-secondary relative select-none" onClick={handleTap}>
             <video src={post.media_url} className="w-full max-h-[600px] object-contain" controls playsInline />
+            {showBigHeart && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <Heart size={80} className="fill-accent text-accent animate-like-pop drop-shadow-lg" />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Content */}
+        {/* Content area - also double tappable if no media */}
         {post.content && (
-          <div className="px-4 pt-3">
+          <div className="px-4 pt-3" onClick={!post.media_url ? handleTap : undefined}>
             <LinkifyText text={post.content} className="text-sm text-foreground leading-relaxed" />
+            {!post.media_url && showBigHeart && (
+              <div className="flex justify-center py-2">
+                <Heart size={48} className="fill-accent text-accent animate-like-pop" />
+              </div>
+            )}
           </div>
         )}
 

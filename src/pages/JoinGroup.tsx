@@ -54,6 +54,14 @@ export default function JoinGroup() {
       toast.info("Demande envoyée ! En attente d'approbation.");
       navigate("/chat");
     } else {
+      // Send system message about joining via link
+      const { data: myProfile } = await supabase.from("profiles").select("display_name, username").eq("user_id", user.id).single();
+      const displayName = myProfile?.display_name || myProfile?.username || "Quelqu'un";
+      await supabase.from("messages").insert({
+        sender_id: user.id,
+        group_id: group.id,
+        content: `[SYSTEM] ${displayName} a rejoint le groupe via le lien d'invitation`,
+      });
       toast.success("Tu as rejoint le groupe !");
       navigate(`/group/${group.id}`);
     }
