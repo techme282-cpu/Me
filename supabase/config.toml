@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.check-banned-email]
 verify_jwt = false
+
+[functions.telegram-stickers]
+verify_jwt = false
