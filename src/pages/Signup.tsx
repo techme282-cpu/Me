@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { UserPlus, Eye, EyeOff } from "lucide-react";
+
+const WELCOME_ACCOUNT_ID = "23e3ae81-1eda-4fb1-9e12-6a82aabff93f";
+const WHATSAPP_CHANNEL = "https://whatsapp.com/channel/0029VbBrP9pKQuJIv0mgUb1Y";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
@@ -25,7 +29,20 @@ export default function Signup() {
     const { error } = await signUp(email, password, username, clan);
     setLoading(false);
     if (error) { toast.error(error.message); return; }
+
+    // Auto-follow welcome account
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user) {
+      await supabase.from("follows").insert({
+        follower_id: authData.user.id,
+        following_id: WELCOME_ACCOUNT_ID,
+        status: "accepted",
+      });
+    }
+
     toast.success("Compte créé ! Bienvenue sur PURGE HUB 🔥");
+    // Open WhatsApp channel in new tab
+    window.open(WHATSAPP_CHANNEL, "_blank");
     navigate("/");
   };
 
