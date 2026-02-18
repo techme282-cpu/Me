@@ -22,6 +22,8 @@ import GroupSettings from "./pages/GroupSettings";
 import JoinGroup from "./pages/JoinGroup";
 import Loop from "./pages/Loop";
 import PostDetail from "./pages/PostDetail";
+import CertificationRequest from "./pages/CertificationRequest";
+import Privacy from "./pages/Privacy";
 
 const queryClient = new QueryClient();
 
@@ -51,6 +53,8 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/create-group" element={<CreateGroup />} />
             <Route path="*" element={<NotFound />} />
+            <Route path="/certification" element={<CertificationRequest />} />
+            <Route path="/privacy" element={<Privacy />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>
