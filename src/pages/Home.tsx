@@ -44,23 +44,35 @@ export default function Home() {
   const fetchPosts = async () => {
     setLoading(true);
 
-    let query = supabase
-      .from("posts")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
+    let postsData: any[] = [];
 
     if (tab === "foryou") {
-      query = supabase
+      // Use the ranking algorithm
+      const { data } = await supabase.rpc("get_ranked_posts", {
+        requesting_user_id: user?.id || "00000000-0000-0000-0000-000000000000",
+        feed_limit: 50,
+      });
+      postsData = data || [];
+    } else {
+      // Following tab: only posts from people I follow
+      if (!user) { setLoading(false); return; }
+      const { data: followData } = await supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", user.id)
+        .eq("status", "accepted");
+      const followingIds = (followData || []).map((f) => f.following_id);
+      if (followingIds.length === 0) { setPosts([]); setLoading(false); return; }
+      const { data } = await supabase
         .from("posts")
         .select("*")
-        .order("is_boosted", { ascending: false })
-        .order("like_count", { ascending: false })
+        .in("user_id", followingIds)
         .order("created_at", { ascending: false })
         .limit(50);
+      postsData = data || [];
     }
 
-    const { data: postsData } = await query;
+    
 
     // Fetch profiles for all posts
     const userIds = [...new Set((postsData || []).map((p: any) => p.user_id))];

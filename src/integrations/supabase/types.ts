@@ -545,6 +545,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_ranked_posts: {
+        Args: { feed_limit?: number; requesting_user_id: string }
+        Returns: {
+          comment_count: number | null
+          content: string | null
+          created_at: string | null
+          hashtags: string[] | null
+          id: string
+          is_boosted: boolean | null
+          is_reported: boolean | null
+          like_count: number | null
+          media_type: string | null
+          media_url: string | null
+          music_credit: string | null
+          share_count: number | null
+          user_id: string
+          view_count: number | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "posts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
