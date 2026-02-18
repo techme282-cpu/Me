@@ -57,11 +57,13 @@ export default function GroupChat() {
       .order("created_at", { ascending: true })
       .limit(300);
     setMessages(data || []);
-    isInitialLoad.current = true;
-    setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "auto" });
-      isInitialLoad.current = false;
-    }, 100);
+    // Scroll to bottom only on first load
+    if (isInitialLoad.current) {
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+        isInitialLoad.current = false;
+      }, 100);
+    }
   };
 
   useEffect(() => {
