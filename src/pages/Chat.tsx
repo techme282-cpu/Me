@@ -175,8 +175,12 @@ export default function Chat() {
                   onClick={() => navigate(`/group/${g.id}`)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
                 >
-                  <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-accent-foreground font-bold shrink-0">
-                    {g.name?.[0]?.toUpperCase() || "G"}
+                  <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-accent-foreground font-bold shrink-0 overflow-hidden">
+                    {g.avatar_url ? (
+                      <img src={g.avatar_url} className="w-full h-full object-cover" alt={g.name} />
+                    ) : (
+                      g.name?.[0]?.toUpperCase() || "G"
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline">
