@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CommentsSheet from "@/components/CommentsSheet";
 import LinkifyText from "@/components/LinkifyText";
+import CertificationBadge from "@/components/CertificationBadge";
 
 interface PostCardProps {
   post: {
@@ -23,6 +24,7 @@ interface PostCardProps {
       username: string;
       display_name: string | null;
       avatar_url: string | null;
+      certification_type?: string | null;
     };
   };
   isLiked?: boolean;
@@ -155,7 +157,10 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
               )}
             </div>
             <div className="text-left">
-              <p className="font-semibold text-sm text-foreground">{profile?.display_name || profile?.username}</p>
+              <p className="font-semibold text-sm text-foreground flex items-center gap-1">
+                {profile?.display_name || profile?.username}
+                <CertificationBadge type={profile?.certification_type} />
+              </p>
               <p className="text-xs text-muted-foreground">@{profile?.username}</p>
             </div>
           </button>

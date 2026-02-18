@@ -387,6 +387,7 @@ export type Database = {
           avatar_url: string | null
           ban_reason: string | null
           bio: string | null
+          certification_type: string | null
           clan: string | null
           created_at: string | null
           display_name: string | null
@@ -402,6 +403,7 @@ export type Database = {
           avatar_url?: string | null
           ban_reason?: string | null
           bio?: string | null
+          certification_type?: string | null
           clan?: string | null
           created_at?: string | null
           display_name?: string | null
@@ -417,6 +419,7 @@ export type Database = {
           avatar_url?: string | null
           ban_reason?: string | null
           bio?: string | null
+          certification_type?: string | null
           clan?: string | null
           created_at?: string | null
           display_name?: string | null

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import PostCard from "@/components/PostCard";
 import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, Heart } from "lucide-react";
 import { toast } from "sonner";
+import CertificationBadge from "@/components/CertificationBadge";
 
 export default function UserProfile() {
   const { userId } = useParams<{ userId: string }>();
@@ -56,7 +57,7 @@ export default function UserProfile() {
         .order("created_at", { ascending: false });
       setPosts((postsData || []).map((post: any) => ({
         ...post,
-        profiles: p ? { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url } : null,
+        profiles: p ? { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url, certification_type: p.certification_type } : null,
       })));
 
       // Fetch favorites
@@ -69,7 +70,7 @@ export default function UserProfile() {
         const { data: favPosts } = await supabase.from("posts").select("*").in("id", postIds).order("created_at", { ascending: false });
         if (favPosts?.length) {
           const uids = [...new Set(favPosts.map((fp: any) => fp.user_id))];
-          const { data: profs } = await supabase.from("profiles").select("user_id, username, display_name, avatar_url").in("user_id", uids);
+          const { data: profs } = await supabase.from("profiles").select("user_id, username, display_name, avatar_url, certification_type").in("user_id", uids);
           const profMap = new Map((profs || []).map((pr: any) => [pr.user_id, pr]));
           setFavorites(favPosts.map((fp: any) => ({ ...fp, profiles: profMap.get(fp.user_id) || null })));
         }
@@ -136,7 +137,7 @@ export default function UserProfile() {
         </div>
 
         <div>
-          <p className="font-semibold text-foreground">{profile.display_name}</p>
+          <p className="font-semibold text-foreground flex items-center gap-1">{profile.display_name} <CertificationBadge type={profile.certification_type} size={16} /></p>
           {profile.clan && <p className="text-xs text-primary font-medium">Clan: {profile.clan}</p>}
           {profile.bio && <p className="text-sm text-muted-foreground mt-1">{profile.bio}</p>}
         </div>

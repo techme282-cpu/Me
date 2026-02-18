@@ -5,6 +5,7 @@ import BottomNav from "@/components/BottomNav";
 import PostCard from "@/components/PostCard";
 import { Settings, Grid3X3, Bookmark, Lock } from "lucide-react";
 import { toast } from "sonner";
+import CertificationBadge from "@/components/CertificationBadge";
 import { useNavigate } from "react-router-dom";
 
 export default function Profile() {
@@ -79,7 +80,7 @@ export default function Profile() {
           </div>
 
           <div>
-            <p className="font-semibold text-foreground">{profile.display_name}</p>
+            <p className="font-semibold text-foreground flex items-center gap-1">{profile.display_name} <CertificationBadge type={profile.certification_type} size={16} /></p>
             {profile.clan && <p className="text-xs text-primary font-medium">Clan: {profile.clan}</p>}
             {editing ? (
               <div className="mt-2 flex gap-2">

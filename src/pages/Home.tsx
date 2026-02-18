@@ -45,7 +45,7 @@ export default function Home() {
     const userIds = [...new Set((postsData || []).map((p: any) => p.user_id))];
     const { data: profilesData } = await supabase
       .from("profiles")
-      .select("user_id, username, display_name, avatar_url")
+      .select("user_id, username, display_name, avatar_url, certification_type")
       .in("user_id", userIds);
 
     const profileMap = new Map((profilesData || []).map((p: any) => [p.user_id, p]));
