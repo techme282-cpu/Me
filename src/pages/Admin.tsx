@@ -5,8 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowLeft, Shield, Ban, Trash2, AlertTriangle, Check, X, Search,
-  Users, FileWarning, Crown, ChevronUp, ChevronDown, UserCog, Activity,
-  ShieldCheck, ShieldOff, Eye, BarChart3
+  Users, FileWarning, Crown, UserCog, Activity,
+  ShieldCheck, ShieldOff, BarChart3, BadgeCheck
 } from "lucide-react";
 import CertificationBadge from "@/components/CertificationBadge";
 
@@ -194,7 +194,6 @@ export default function Admin() {
       toast.error("Seul l'admin principal peut rétrograder");
       return;
     }
-    // Can't demote self (principal)
     if (userId === user?.id) {
       toast.error("Vous ne pouvez pas vous rétrograder");
       return;
@@ -205,6 +204,16 @@ export default function Admin() {
     } else {
       toast.success("Admin rétrogradé");
       fetchAdminIds();
+    }
+  };
+
+  const handleSetCertification = async (userId: string, certType: string | null) => {
+    const { error } = await supabase.from("profiles").update({ certification_type: certType }).eq("user_id", userId);
+    if (error) {
+      toast.error("Erreur: " + error.message);
+    } else {
+      toast.success(certType ? `Certification "${certType}" attribuée` : "Certification retirée");
+      fetchUsers();
     }
   };
 
@@ -498,6 +507,25 @@ export default function Admin() {
 
                     {/* Action buttons */}
                     <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                      {/* Certification button (admin only, not self, not protected admins unless principal) */}
+                      {!isSelf && (canAction || !userIsAdmin) && (
+                        <div className="relative group/cert">
+                          <button
+                            className="w-8 h-8 bg-accent/10 text-accent rounded-lg flex items-center justify-center hover:bg-accent/20 transition-colors"
+                            title="Certification"
+                            onClick={() => {
+                              const next = u.certification_type === null ? "verified"
+                                : u.certification_type === "verified" ? "creator"
+                                : u.certification_type === "creator" ? "official"
+                                : null;
+                              handleSetCertification(u.user_id, next);
+                            }}
+                          >
+                            <BadgeCheck size={14} />
+                          </button>
+                        </div>
+                      )}
+
                       {/* Promote / Demote (principal only) */}
                       {isPrincipal && !isSelf && (
                         userIsAdmin ? (
