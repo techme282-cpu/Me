@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import PostCard from "@/components/PostCard";
-import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, Heart } from "lucide-react";
+import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import CertificationBadge from "@/components/CertificationBadge";
 import { sendNotification } from "@/lib/notifications";
@@ -159,7 +159,13 @@ export default function UserProfile() {
             <button onClick={handleFollow} className={`flex-1 py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-all ${isFollowing ? "bg-secondary text-foreground" : followStatus === "pending" ? "bg-secondary text-muted-foreground" : "gradient-primary text-primary-foreground glow-primary"}`}>
               {isFollowing ? <><UserMinus size={16} /> Suivi</> : followStatus === "pending" ? "En attente" : <><UserPlus size={16} /> Suivre</>}
             </button>
-            <button onClick={handleReport} className="px-4 py-2 rounded-xl bg-secondary text-muted-foreground hover:text-destructive transition-colors">
+            <button
+              onClick={() => navigate(`/chat/${userId}`)}
+              className="px-4 py-2 rounded-xl bg-secondary text-foreground hover:bg-secondary/80 transition-colors flex items-center gap-1.5 text-sm font-semibold"
+            >
+              <MessageCircle size={16} /> Msg
+            </button>
+            <button onClick={handleReport} className="px-3 py-2 rounded-xl bg-secondary text-muted-foreground hover:text-destructive transition-colors">
               <Flag size={16} />
             </button>
           </div>

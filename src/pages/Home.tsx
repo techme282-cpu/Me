@@ -47,14 +47,14 @@ export default function Home() {
     let postsData: any[] = [];
 
     if (tab === "foryou") {
-      // Use the ranking algorithm
+      // Use the ranking algorithm — exclude videos (those are for Loop)
       const { data } = await supabase.rpc("get_ranked_posts", {
         requesting_user_id: user?.id || "00000000-0000-0000-0000-000000000000",
         feed_limit: 50,
       });
-      postsData = data || [];
+      postsData = (data || []).filter((p: any) => p.media_type !== "video");
     } else {
-      // Following tab: only posts from people I follow
+      // Following tab: only posts from people I follow (exclude videos)
       if (!user) { setLoading(false); return; }
       const { data: followData } = await supabase
         .from("follows")
@@ -67,6 +67,7 @@ export default function Home() {
         .from("posts")
         .select("*")
         .in("user_id", followingIds)
+        .neq("media_type", "video")
         .order("created_at", { ascending: false })
         .limit(50);
       postsData = data || [];

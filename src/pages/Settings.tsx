@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, LogOut, User, Shield, Moon, Bell, Lock, ChevronRight, Camera, Check, X, BadgeCheck } from "lucide-react";
+import { ArrowLeft, LogOut, Shield, Moon, Bell, Lock, ChevronRight, Check, X, BadgeCheck, Camera, Loader2 } from "lucide-react";
 import CertificationBadge from "@/components/CertificationBadge";
 
 export default function Settings() {
@@ -15,9 +15,10 @@ export default function Settings() {
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
   const [clan, setClan] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -38,7 +39,6 @@ export default function Settings() {
       setDisplayName(data.display_name || "");
       setUsername(data.username || "");
       setBio(data.bio || "");
-      setAvatarUrl(data.avatar_url || "");
       setClan(data.clan || "");
     }
   };
@@ -56,6 +56,38 @@ export default function Settings() {
     toast.success(newVal ? "Compte privé activé" : "Compte public");
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Sélectionne une image");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image trop lourde (max 5 Mo)");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `avatars/${user.id}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+      const publicUrl = urlData.publicUrl + `?t=${Date.now()}`;
+
+      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("user_id", user.id);
+      setProfile((prev: any) => ({ ...prev, avatar_url: publicUrl }));
+      toast.success("Photo de profil mise à jour !");
+    } catch (err: any) {
+      toast.error("Erreur upload: " + err.message);
+    }
+    setUploading(false);
+  };
+
   const saveProfile = async () => {
     if (!user) return;
     if (!username.trim()) { toast.error("Username requis"); return; }
@@ -63,7 +95,6 @@ export default function Settings() {
       display_name: displayName.trim(),
       username: username.trim(),
       bio: bio.trim(),
-      avatar_url: avatarUrl.trim() || null,
       clan: clan.trim(),
     }).eq("user_id", user.id);
     if (error) {
@@ -88,6 +119,28 @@ export default function Settings() {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6 space-y-6">
+        {/* Avatar upload */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center text-2xl font-bold text-primary-foreground overflow-hidden">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+              ) : (
+                profile?.username?.[0]?.toUpperCase() || "?"
+              )}
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-lg border-2 border-background"
+            >
+              {uploading ? <Loader2 size={14} className="animate-spin text-primary-foreground" /> : <Camera size={14} className="text-primary-foreground" />}
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+          </div>
+          <p className="text-xs text-muted-foreground">Appuie sur l'icône pour changer la photo</p>
+        </div>
+
         {/* Profile editing */}
         <div className="space-y-2">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Mon profil</h3>
@@ -112,12 +165,6 @@ export default function Settings() {
                   rows={3} maxLength={150} />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">URL de l'avatar</label>
-                <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="w-full bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground mt-1 focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  placeholder="https://..." />
-              </div>
-              <div>
                 <label className="text-xs text-muted-foreground">Clan</label>
                 <input value={clan} onChange={(e) => setClan(e.target.value)}
                   className="w-full bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground mt-1 focus:outline-none focus:ring-1 focus:ring-primary/50"
@@ -135,13 +182,6 @@ export default function Settings() {
           ) : (
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
               <button onClick={() => setEditing(true)} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/50 transition-colors text-left">
-                <div className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold shrink-0">
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="" />
-                  ) : (
-                    profile?.username?.[0]?.toUpperCase() || "?"
-                  )}
-                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground">{profile?.display_name || profile?.username}</p>
                   <p className="text-xs text-muted-foreground">@{profile?.username}</p>

@@ -7,6 +7,8 @@ import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import LinkifyText from "@/components/LinkifyText";
+import StickerPicker from "@/components/StickerPicker";
+import MessageContent from "@/components/MessageContent";
 
 export default function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -85,16 +87,18 @@ export default function GroupChat() {
     return () => { supabase.removeChannel(channel); };
   }, [groupId, user?.id]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || !user || !groupId) return;
-    const content = input.trim();
-    setInput("");
-    const insertData: any = { sender_id: user.id, group_id: groupId, content };
-    if (replyTo) insertData.reply_to = replyTo.id;
-    setReplyTo(null);
+  const sendMessage = async (contentOverride?: string) => {
+    const text = (contentOverride || input).trim();
+    if (!text || !user || !groupId) return;
+    if (!contentOverride) setInput("");
+    const insertData: any = { sender_id: user.id, group_id: groupId, content: text };
+    if (!contentOverride && replyTo) insertData.reply_to = replyTo.id;
+    if (!contentOverride) setReplyTo(null);
     await supabase.from("messages").insert(insertData);
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    if (!contentOverride) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
+
+  const sendSticker = (stickerContent: string) => sendMessage(stickerContent);
 
   const deleteMessage = async (msgId: string) => {
     await supabase.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", msgId);
@@ -155,6 +159,22 @@ export default function GroupChat() {
           const sender = profiles[msg.sender_id];
           const senderMembership = members.find((m) => m.user_id === msg.sender_id);
           const replied = msg.reply_to ? messages.find((m) => m.id === msg.reply_to) : null;
+          const isSticker = msg.content?.startsWith("[STICKER:");
+
+          if (isSticker) {
+            return (
+              <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
+                  {!mine && <p className="text-xs font-semibold text-primary px-1">{sender?.display_name || sender?.username || "?"}</p>}
+                  <MessageContent content={msg.content} />
+                  <p className="text-[10px] text-muted-foreground px-1">
+                    {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] group relative`}>
@@ -167,7 +187,7 @@ export default function GroupChat() {
                   {!mine && (
                     <p className="text-xs font-semibold text-primary mb-0.5 flex items-center gap-1">
                       {sender?.display_name || sender?.username || "?"}
-                      {senderMembership?.role === "owner" && <span className="text-yellow-500 text-[10px]">👑</span>}
+                      {senderMembership?.role === "owner" && <span className="text-amber-500 text-[10px]">👑</span>}
                       {senderMembership?.role === "admin" && <span className="text-[10px] opacity-70">Admin</span>}
                     </p>
                   )}
@@ -205,7 +225,8 @@ export default function GroupChat() {
       {isMember ? (
         canSend ? (
           <div className="sticky bottom-0 glass border-t border-border p-3 shrink-0">
-            <div className="flex gap-2 max-w-lg mx-auto">
+            <div className="flex gap-2 max-w-lg mx-auto items-center">
+              <StickerPicker onSendSticker={sendSticker} />
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -213,7 +234,7 @@ export default function GroupChat() {
                 className="flex-1 bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                 placeholder="Écrire un message..."
               />
-              <button onClick={sendMessage} disabled={!input.trim()} className="gradient-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-50">
+              <button onClick={() => sendMessage()} disabled={!input.trim()} className="gradient-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-50">
                 <Send size={18} />
               </button>
             </div>
