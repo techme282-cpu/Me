@@ -36,13 +36,13 @@ interface PostCardProps {
 export default function PostCard({ post, isLiked = false, isSaved = false, onDelete }: PostCardProps) {
   const [liked, setLiked] = useState(isLiked);
   const [saved, setSaved] = useState(isSaved);
-  const [likeCount, setLikeCount] = useState(post.like_count);
-  const [commentCount, setCommentCount] = useState(post.comment_count);
+  const [likeCount, setLikeCount] = useState(post.like_count || 0);
+  const [commentCount, setCommentCount] = useState(post.comment_count || 0);
   const [animateLike, setAnimateLike] = useState(false);
   const [showBigHeart, setShowBigHeart] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [liking, setLiking] = useState(false);
+  const likingRef = useRef(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const lastTapRef = useRef(0);
@@ -50,23 +50,41 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
   const isOwner = user?.id === post.user_id;
 
   const handleLike = useCallback(async () => {
-    if (!user || liking) return;
-    setLiking(true);
+    if (!user || likingRef.current) return;
+    likingRef.current = true;
     setAnimateLike(true);
     setTimeout(() => setAnimateLike(false), 300);
 
     try {
       if (liked) {
+        // Unlike
         setLiked(false);
-        setLikeCount((c) => c - 1);
+        setLikeCount((c) => Math.max(0, c - 1));
         await supabase.from("post_likes").delete().eq("user_id", user.id).eq("post_id", post.id);
-        await supabase.from("posts").update({ like_count: Math.max(0, likeCount - 1) }).eq("id", post.id);
+        // Refresh actual count from DB
+        const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
+        const newCount = count || 0;
+        await supabase.from("posts").update({ like_count: newCount }).eq("id", post.id);
+        setLikeCount(newCount);
       } else {
+        // Check if already liked in DB to prevent duplicates
+        const { data: existing } = await supabase.from("post_likes").select("id").eq("user_id", user.id).eq("post_id", post.id).maybeSingle();
+        if (existing) {
+          // Already liked in DB, just sync state
+          setLiked(true);
+          const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
+          setLikeCount(count || 0);
+          return;
+        }
         setLiked(true);
         setLikeCount((c) => c + 1);
         await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
-        await supabase.from("posts").update({ like_count: likeCount + 1 }).eq("id", post.id);
-        // Send like notification
+        // Refresh actual count
+        const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
+        const newCount = count || 0;
+        await supabase.from("posts").update({ like_count: newCount }).eq("id", post.id);
+        setLikeCount(newCount);
+        // Send notification
         const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
         sendNotification({
           userId: post.user_id,
@@ -76,28 +94,41 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
           relatedPostId: post.id,
         });
       }
+    } catch (err) {
+      // Revert on error
+      setLiked(isLiked);
+      setLikeCount(post.like_count || 0);
     } finally {
-      setLiking(false);
+      likingRef.current = false;
     }
-  }, [user, liked, liking, likeCount, post.id]);
+  }, [user, liked, post.id, post.user_id, isLiked, post.like_count]);
 
   const handleDoubleTapLike = useCallback(async () => {
-    if (!user || liking) return;
+    if (!user || likingRef.current) return;
     // Only like on double tap, never unlike
     if (liked) {
       setShowBigHeart(true);
       setTimeout(() => setShowBigHeart(false), 800);
       return;
     }
-    setLiking(true);
+    likingRef.current = true;
     setShowBigHeart(true);
     setAnimateLike(true);
     setTimeout(() => { setShowBigHeart(false); setAnimateLike(false); }, 800);
-    setLiked(true);
-    setLikeCount((c) => c + 1);
+
     try {
+      // Check DB first
+      const { data: existing } = await supabase.from("post_likes").select("id").eq("user_id", user.id).eq("post_id", post.id).maybeSingle();
+      if (existing) {
+        setLiked(true);
+        return;
+      }
+      setLiked(true);
+      setLikeCount((c) => c + 1);
       await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
-      await supabase.from("posts").update({ like_count: likeCount + 1 }).eq("id", post.id);
+      const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
+      await supabase.from("posts").update({ like_count: count || 0 }).eq("id", post.id);
+      setLikeCount(count || 0);
       const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
       sendNotification({
         userId: post.user_id,
@@ -107,9 +138,9 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
         relatedPostId: post.id,
       });
     } finally {
-      setLiking(false);
+      likingRef.current = false;
     }
-  }, [user, liked, liking, likeCount, post.id]);
+  }, [user, liked, post.id, post.user_id]);
 
   const handleTap = useCallback(() => {
     const now = Date.now();
@@ -231,7 +262,7 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
           </div>
         )}
 
-        {/* Content area - also double tappable if no media */}
+        {/* Content area */}
         {post.content && (
           <div className="px-4 pt-3" onClick={!post.media_url ? handleTap : undefined}>
             <LinkifyText text={post.content} className="text-sm text-foreground leading-relaxed" />
