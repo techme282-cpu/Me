@@ -6,6 +6,7 @@ import BottomNav from "@/components/BottomNav";
 import StoriesBar from "@/components/StoriesBar";
 import { Bell, Flame } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { requestNotificationPermission, showBrowserNotification } from "@/lib/pushNotifications";
 
 export default function Home() {
   const { user } = useAuth();
@@ -17,7 +18,12 @@ export default function Home() {
   const [tab, setTab] = useState<"foryou" | "following">("foryou");
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Fetch unread notification count
+  // Request notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // Fetch unread notification count + listen for new notifications with browser push
   useEffect(() => {
     if (!user) return;
     const fetchCount = async () => {
@@ -32,7 +38,19 @@ export default function Home() {
 
     const channel = supabase
       .channel("notif-count")
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
+        fetchCount();
+        // Show browser notification
+        const notif = payload.new as any;
+        if (notif && document.hidden) {
+          showBrowserNotification(notif.title, {
+            body: notif.body || "",
+            tag: notif.id,
+          });
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);

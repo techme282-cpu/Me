@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -9,6 +9,7 @@ import {
   ShieldCheck, ShieldOff, BarChart3, BadgeCheck
 } from "lucide-react";
 import CertificationBadge from "@/components/CertificationBadge";
+import { sendNotification } from "@/lib/notifications";
 
 const PRINCIPAL_ADMIN_EMAIL = "inconnuboytech@gmail.com";
 
@@ -54,6 +55,12 @@ export default function Admin() {
 
   const [confirmAction, setConfirmAction] = useState<{ type: string; userId: string; username: string } | null>(null);
   const [banReason, setBanReason] = useState("");
+  
+  // Certification picker state
+  const [certPickerUserId, setCertPickerUserId] = useState<string | null>(null);
+
+  // Prevent double clicks
+  const actionInProgress = useRef(false);
 
   // Stats
   const [stats, setStats] = useState({ users: 0, posts: 0, reports: 0, banned: 0 });
@@ -129,91 +136,145 @@ export default function Admin() {
 
   const canBanUser = (targetUserId: string) => {
     if (isUserAdmin(targetUserId)) {
-      // Only principal admin can ban other admins
       return isPrincipal && targetUserId !== user?.id;
     }
     return targetUserId !== user?.id;
   };
 
   const handleBanUser = async (userId: string) => {
-    if (!canBanUser(userId)) {
-      toast.error("Vous ne pouvez pas bannir cet utilisateur");
-      return;
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      if (!canBanUser(userId)) {
+        toast.error("Vous ne pouvez pas bannir cet utilisateur");
+        return;
+      }
+      const { error } = await supabase.from("profiles").update({ is_banned: true, ban_reason: banReason || "Banni par admin" }).eq("user_id", userId);
+      if (error) {
+        toast.error("Erreur: " + error.message);
+        return;
+      }
+      toast.success("Utilisateur banni");
+      setConfirmAction(null);
+      setBanReason("");
+      fetchUsers();
+      fetchStats();
+    } finally {
+      actionInProgress.current = false;
     }
-    await supabase.from("profiles").update({ is_banned: true, ban_reason: banReason || "Banni par admin" }).eq("user_id", userId);
-    toast.success("Utilisateur banni");
-    setConfirmAction(null);
-    setBanReason("");
-    fetchUsers();
-    fetchStats();
   };
 
   const handleUnbanUser = async (userId: string) => {
-    await supabase.from("profiles").update({ is_banned: false, ban_reason: null }).eq("user_id", userId);
-    toast.success("Utilisateur débanni");
-    fetchUsers();
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      const { error } = await supabase.from("profiles").update({ is_banned: false, ban_reason: null }).eq("user_id", userId);
+      if (error) {
+        toast.error("Erreur: " + error.message);
+        return;
+      }
+      toast.success("Utilisateur débanni");
+      fetchUsers();
+    } finally {
+      actionInProgress.current = false;
+    }
   };
 
   const handleDeleteAccount = async (userId: string) => {
-    if (!canBanUser(userId)) {
-      toast.error("Vous ne pouvez pas supprimer cet utilisateur");
-      return;
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      if (!canBanUser(userId)) {
+        toast.error("Vous ne pouvez pas supprimer cet utilisateur");
+        return;
+      }
+      const res = await supabase.functions.invoke("admin-delete-account", {
+        body: { userId, reason: banReason || "Supprimé par admin" },
+      });
+      if (res.error) {
+        toast.error("Erreur: " + (res.error.message || "Échec de suppression"));
+      } else {
+        toast.success("Compte supprimé définitivement");
+        fetchUsers();
+        fetchBannedEmails();
+        fetchStats();
+      }
+      setConfirmAction(null);
+      setBanReason("");
+    } finally {
+      actionInProgress.current = false;
     }
-    const res = await supabase.functions.invoke("admin-delete-account", {
-      body: { userId, reason: banReason || "Supprimé par admin" },
-    });
-    if (res.error) {
-      toast.error("Erreur: " + (res.error.message || "Échec de suppression"));
-    } else {
-      toast.success("Compte supprimé définitivement");
-      fetchUsers();
-      fetchBannedEmails();
-      fetchStats();
-    }
-    setConfirmAction(null);
-    setBanReason("");
   };
 
   const handlePromote = async (userId: string) => {
-    if (!isPrincipal) {
-      toast.error("Seul l'admin principal peut promouvoir");
-      return;
-    }
-    const { error } = await supabase.from("user_roles").insert({ user_id: userId, role: "admin" as any });
-    if (error) {
-      if (error.code === "23505") toast.info("Déjà admin");
-      else toast.error("Erreur: " + error.message);
-    } else {
-      toast.success("Utilisateur promu admin");
-      fetchAdminIds();
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      if (!isPrincipal) {
+        toast.error("Seul l'admin principal peut promouvoir");
+        return;
+      }
+      const { error } = await supabase.from("user_roles").insert({ user_id: userId, role: "admin" as any });
+      if (error) {
+        if (error.code === "23505") toast.info("Déjà admin");
+        else toast.error("Erreur: " + error.message);
+      } else {
+        toast.success("Utilisateur promu admin");
+        fetchAdminIds();
+      }
+    } finally {
+      actionInProgress.current = false;
     }
   };
 
   const handleDemote = async (userId: string) => {
-    if (!isPrincipal) {
-      toast.error("Seul l'admin principal peut rétrograder");
-      return;
-    }
-    if (userId === user?.id) {
-      toast.error("Vous ne pouvez pas vous rétrograder");
-      return;
-    }
-    const { error } = await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "admin");
-    if (error) {
-      toast.error("Erreur: " + error.message);
-    } else {
-      toast.success("Admin rétrogradé");
-      fetchAdminIds();
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      if (!isPrincipal) {
+        toast.error("Seul l'admin principal peut rétrograder");
+        return;
+      }
+      if (userId === user?.id) {
+        toast.error("Vous ne pouvez pas vous rétrograder");
+        return;
+      }
+      const { error } = await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "admin");
+      if (error) {
+        toast.error("Erreur: " + error.message);
+      } else {
+        toast.success("Admin rétrogradé");
+        fetchAdminIds();
+      }
+    } finally {
+      actionInProgress.current = false;
     }
   };
 
   const handleSetCertification = async (userId: string, certType: string | null) => {
-    const { error } = await supabase.from("profiles").update({ certification_type: certType }).eq("user_id", userId);
-    if (error) {
-      toast.error("Erreur: " + error.message);
-    } else {
-      toast.success(certType ? `Certification "${certType}" attribuée` : "Certification retirée");
-      fetchUsers();
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    try {
+      const { error } = await supabase.from("profiles").update({ certification_type: certType }).eq("user_id", userId);
+      if (error) {
+        toast.error("Erreur: " + error.message);
+      } else {
+        toast.success(certType ? `Certification "${certType}" attribuée` : "Certification retirée");
+        // Send notification to the user
+        if (certType) {
+          sendNotification({
+            userId,
+            type: "certification",
+            title: `Votre compte a été certifié "${certType}" 🎉`,
+            body: "Félicitations ! Votre badge de certification est maintenant visible.",
+            relatedUserId: user?.id,
+          });
+        }
+        fetchUsers();
+      }
+      setCertPickerUserId(null);
+    } finally {
+      actionInProgress.current = false;
     }
   };
 
@@ -260,6 +321,13 @@ export default function Admin() {
   ];
 
   const pendingReports = reports.filter(r => r.status === "pending");
+
+  const certOptions = [
+    { value: "verified", label: "Vérifié", color: "text-blue-400 bg-blue-400/10" },
+    { value: "creator", label: "Créateur", color: "text-yellow-400 bg-yellow-400/10" },
+    { value: "official", label: "Officiel", color: "text-emerald-400 bg-emerald-400/10" },
+    { value: null as string | null, label: "Retirer", color: "text-muted-foreground bg-muted/50" },
+  ];
 
   return (
     <div className="min-h-screen bg-background pb-6">
@@ -313,7 +381,6 @@ export default function Admin() {
         {/* OVERVIEW TAB */}
         {tab === "overview" && (
           <div className="space-y-5">
-            {/* Stats Grid */}
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "Utilisateurs", value: stats.users, icon: Users, color: "text-primary", bg: "bg-primary/10" },
@@ -333,7 +400,6 @@ export default function Admin() {
               ))}
             </div>
 
-            {/* Recent pending reports */}
             {pendingReports.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -362,7 +428,6 @@ export default function Admin() {
               </div>
             )}
 
-            {/* Quick actions */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Actions rapides</h3>
               <div className="grid grid-cols-2 gap-3">
@@ -507,22 +572,40 @@ export default function Admin() {
 
                     {/* Action buttons */}
                     <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
-                      {/* Certification button (admin only, not self, not protected admins unless principal) */}
+                      {/* Certification button - opens picker */}
                       {!isSelf && (canAction || !userIsAdmin) && (
-                        <div className="relative group/cert">
+                        <div className="relative">
                           <button
                             className="w-8 h-8 bg-accent/10 text-accent rounded-lg flex items-center justify-center hover:bg-accent/20 transition-colors"
                             title="Certification"
-                            onClick={() => {
-                              const next = u.certification_type === null ? "verified"
-                                : u.certification_type === "verified" ? "creator"
-                                : u.certification_type === "creator" ? "official"
-                                : null;
-                              handleSetCertification(u.user_id, next);
-                            }}
+                            onClick={() => setCertPickerUserId(certPickerUserId === u.user_id ? null : u.user_id)}
                           >
                             <BadgeCheck size={14} />
                           </button>
+                          {/* Certification dropdown */}
+                          {certPickerUserId === u.user_id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setCertPickerUserId(null)} />
+                              <div className="absolute right-0 top-10 z-50 bg-card border border-border rounded-xl shadow-xl py-1 w-44">
+                                <p className="px-3 py-1.5 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Choisir certification</p>
+                                {certOptions.map((opt) => (
+                                  <button
+                                    key={opt.value ?? "remove"}
+                                    onClick={() => handleSetCertification(u.user_id, opt.value)}
+                                    className={`w-full px-3 py-2 text-sm text-left hover:bg-secondary/80 flex items-center gap-2 transition-colors ${
+                                      u.certification_type === opt.value ? "bg-secondary/50" : ""
+                                    }`}
+                                  >
+                                    <span className={`w-6 h-6 rounded-md flex items-center justify-center text-xs ${opt.color}`}>
+                                      {opt.value === "verified" ? "V" : opt.value === "creator" ? "C" : opt.value === "official" ? "O" : "✕"}
+                                    </span>
+                                    <span className="text-foreground text-xs font-medium">{opt.label}</span>
+                                    {u.certification_type === opt.value && <Check size={12} className="text-primary ml-auto" />}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
 
