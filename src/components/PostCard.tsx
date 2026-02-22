@@ -61,16 +61,13 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
         setLiked(false);
         setLikeCount((c) => Math.max(0, c - 1));
         await supabase.from("post_likes").delete().eq("user_id", user.id).eq("post_id", post.id);
-        // Refresh actual count from DB
+        // Trigger auto-updates like_count, refresh from DB
         const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
-        const newCount = count || 0;
-        await supabase.from("posts").update({ like_count: newCount }).eq("id", post.id);
-        setLikeCount(newCount);
+        setLikeCount(count || 0);
       } else {
         // Check if already liked in DB to prevent duplicates
         const { data: existing } = await supabase.from("post_likes").select("id").eq("user_id", user.id).eq("post_id", post.id).maybeSingle();
         if (existing) {
-          // Already liked in DB, just sync state
           setLiked(true);
           const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
           setLikeCount(count || 0);
@@ -79,13 +76,11 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
         setLiked(true);
         setLikeCount((c) => c + 1);
         await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
-        // Refresh actual count
+        // Trigger auto-updates like_count, refresh from DB
         const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
-        const newCount = count || 0;
-        await supabase.from("posts").update({ like_count: newCount }).eq("id", post.id);
-        setLikeCount(newCount);
+        setLikeCount(count || 0);
         // Send notification
-        const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
+        const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).maybeSingle();
         sendNotification({
           userId: post.user_id,
           type: "like",
@@ -127,9 +122,8 @@ export default function PostCard({ post, isLiked = false, isSaved = false, onDel
       setLikeCount((c) => c + 1);
       await supabase.from("post_likes").insert({ user_id: user.id, post_id: post.id });
       const { count } = await supabase.from("post_likes").select("id", { count: "exact", head: true }).eq("post_id", post.id);
-      await supabase.from("posts").update({ like_count: count || 0 }).eq("id", post.id);
       setLikeCount(count || 0);
-      const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
+      const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).maybeSingle();
       sendNotification({
         userId: post.user_id,
         type: "like",

@@ -48,17 +48,16 @@ export default function CommentsSheet({ postId, onClose, onCountChange }: Commen
       user_id: user.id,
       content: input.trim(),
     });
-    if (error) { toast.error("Erreur"); setLoading(false); return; }
+    if (error) { toast.error("Erreur: " + error.message); setLoading(false); return; }
 
-    // Update comment count
+    // Trigger auto-updates comment_count, just refresh UI
     const newCount = comments.length + 1;
-    await supabase.from("posts").update({ comment_count: newCount }).eq("id", postId);
     onCountChange(newCount);
 
     // Send comment notification to post owner
-    const { data: postData } = await supabase.from("posts").select("user_id").eq("id", postId).single();
+    const { data: postData } = await supabase.from("posts").select("user_id").eq("id", postId).maybeSingle();
     if (postData) {
-      const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
+      const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).maybeSingle();
       sendNotification({
         userId: postData.user_id,
         type: "comment",
@@ -76,8 +75,8 @@ export default function CommentsSheet({ postId, onClose, onCountChange }: Commen
 
   const deleteComment = async (commentId: string) => {
     await supabase.from("comments").delete().eq("id", commentId);
+    // Trigger auto-updates comment_count
     const newCount = Math.max(0, comments.length - 1);
-    await supabase.from("posts").update({ comment_count: newCount }).eq("id", postId);
     onCountChange(newCount);
     fetchComments();
     toast.success("Commentaire supprimé");
