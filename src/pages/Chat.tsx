@@ -40,7 +40,7 @@ export default function Chat() {
       if (partnerId && !seen.has(partnerId)) {
         seen.add(partnerId);
         // fetch partner profile
-        const { data: prof } = await supabase.from("profiles").select("username, display_name, avatar_url").eq("user_id", partnerId).single();
+        const { data: prof } = await supabase.from("profiles").select("username, display_name, avatar_url, certification_type, is_verified").eq("user_id", partnerId).maybeSingle();
         convos.push({ ...msg, partnerId, profile: prof });
       }
     }
@@ -139,8 +139,12 @@ export default function Chat() {
                   onClick={() => navigate(`/chat/${conv.partnerId}`)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
                 >
-                  <div className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold shrink-0">
-                    {conv.profile?.username?.[0]?.toUpperCase() || "?"}
+                  <div className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold shrink-0 overflow-hidden">
+                    {conv.profile?.avatar_url ? (
+                      <img src={conv.profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      conv.profile?.username?.[0]?.toUpperCase() || "?"
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline">
@@ -149,7 +153,9 @@ export default function Chat() {
                         {formatDistanceToNow(new Date(conv.created_at), { addSuffix: true, locale: fr })}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">{conv.content}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {conv.content?.startsWith("[STICKER:") ? "🎭 Sticker" : conv.content}
+                    </p>
                   </div>
                   {!conv.is_read && conv.receiver_id === user?.id && (
                     <div className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
@@ -192,7 +198,7 @@ export default function Chat() {
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground truncate">
-                      {g.lastMessage ? g.lastMessage.content : `${g.memberCount} membre${g.memberCount > 1 ? "s" : ""}`}
+                      {g.lastMessage?.content?.startsWith("[STICKER:") ? "🎭 Sticker" : g.lastMessage ? g.lastMessage.content : `${g.memberCount} membre${g.memberCount > 1 ? "s" : ""}`}
                     </p>
                   </div>
                 </button>
