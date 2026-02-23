@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import BottomNav from "@/components/BottomNav";
-import { Heart, MessageCircle, Share2, User, Volume2, VolumeX } from "lucide-react";
+import CommentsSheet from "@/components/CommentsSheet";
+import { Heart, MessageCircle, Share2, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -13,7 +14,9 @@ export default function Loop() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [muted, setMuted] = useState(true);
+  const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   useEffect(() => {
     fetchVideos();
@@ -41,16 +44,34 @@ export default function Loop() {
     }
   };
 
-  const handleLike = async (postId: string, likeCount: number) => {
+  // Manage video playback based on currentIndex
+  useEffect(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (index === currentIndex) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+        video.currentTime = 0;
+      }
+    });
+  }, [currentIndex]);
+
+  const setVideoRef = useCallback((index: number, el: HTMLVideoElement | null) => {
+    if (el) {
+      videoRefs.current.set(index, el);
+    } else {
+      videoRefs.current.delete(index);
+    }
+  }, []);
+
+  const handleLike = async (postId: string) => {
     if (!user) return;
     if (likedIds.has(postId)) {
       setLikedIds((prev) => { const s = new Set(prev); s.delete(postId); return s; });
       await supabase.from("post_likes").delete().eq("user_id", user.id).eq("post_id", postId);
-      await supabase.from("posts").update({ like_count: likeCount - 1 }).eq("id", postId);
     } else {
       setLikedIds((prev) => new Set(prev).add(postId));
       await supabase.from("post_likes").insert({ user_id: user.id, post_id: postId });
-      await supabase.from("posts").update({ like_count: likeCount + 1 }).eq("id", postId);
     }
   };
 
@@ -64,7 +85,9 @@ export default function Loop() {
     const scrollTop = containerRef.current.scrollTop;
     const height = containerRef.current.clientHeight;
     const index = Math.round(scrollTop / height);
-    setCurrentIndex(index);
+    if (index !== currentIndex) {
+      setCurrentIndex(index);
+    }
   };
 
   if (videos.length === 0) {
@@ -92,16 +115,17 @@ export default function Loop() {
           return (
             <div
               key={video.id}
-              className="h-screen w-full snap-start relative flex items-center justify-center bg-background"
+              className="h-screen w-full snap-start relative flex items-center justify-center bg-black"
               style={{ scrollSnapAlign: "start" }}
             >
               <video
+                ref={(el) => setVideoRef(index, el)}
                 src={video.media_url}
                 className="h-full w-full object-cover"
                 loop
                 muted={muted}
-                autoPlay={index === currentIndex}
                 playsInline
+                preload="metadata"
                 onClick={() => setMuted(!muted)}
               />
 
@@ -110,35 +134,35 @@ export default function Loop() {
                 <div className="flex items-end gap-3">
                   <div className="flex-1 min-w-0">
                     <button onClick={() => navigate(`/user/${video.user_id}`)} className="flex items-center gap-2 mb-2">
-                      <div className="w-9 h-9 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-xs">
+                      <div className="w-9 h-9 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-xs overflow-hidden">
                         {profile?.avatar_url ? (
                           <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="" />
                         ) : (
                           profile?.username?.[0]?.toUpperCase() || "?"
                         )}
                       </div>
-                      <span className="text-sm font-semibold text-foreground drop-shadow-lg">@{profile?.username}</span>
+                      <span className="text-sm font-semibold text-white drop-shadow-lg">@{profile?.username}</span>
                     </button>
                     {video.content && (
-                      <p className="text-sm text-foreground drop-shadow-lg line-clamp-2">{video.content}</p>
+                      <p className="text-sm text-white drop-shadow-lg line-clamp-2">{video.content}</p>
                     )}
                   </div>
 
                   {/* Side actions */}
                   <div className="flex flex-col items-center gap-5">
-                    <button onClick={() => handleLike(video.id, video.like_count)} className="flex flex-col items-center gap-1">
-                      <Heart size={28} className={`drop-shadow-lg ${isLiked ? "fill-accent text-accent" : "text-foreground"}`} />
-                      <span className="text-xs text-foreground drop-shadow-lg">{video.like_count}</span>
+                    <button onClick={() => handleLike(video.id)} className="flex flex-col items-center gap-1">
+                      <Heart size={28} className={`drop-shadow-lg ${isLiked ? "fill-red-500 text-red-500" : "text-white"}`} />
+                      <span className="text-xs text-white drop-shadow-lg">{video.like_count || 0}</span>
                     </button>
-                    <button className="flex flex-col items-center gap-1">
-                      <MessageCircle size={28} className="text-foreground drop-shadow-lg" />
-                      <span className="text-xs text-foreground drop-shadow-lg">{video.comment_count}</span>
+                    <button onClick={() => setCommentPostId(video.id)} className="flex flex-col items-center gap-1">
+                      <MessageCircle size={28} className="text-white drop-shadow-lg" />
+                      <span className="text-xs text-white drop-shadow-lg">{video.comment_count || 0}</span>
                     </button>
                     <button onClick={() => handleShare(video.id)} className="flex flex-col items-center gap-1">
-                      <Share2 size={28} className="text-foreground drop-shadow-lg" />
+                      <Share2 size={28} className="text-white drop-shadow-lg" />
                     </button>
                     <button onClick={() => setMuted(!muted)}>
-                      {muted ? <VolumeX size={24} className="text-foreground drop-shadow-lg" /> : <Volume2 size={24} className="text-foreground drop-shadow-lg" />}
+                      {muted ? <VolumeX size={24} className="text-white drop-shadow-lg" /> : <Volume2 size={24} className="text-white drop-shadow-lg" />}
                     </button>
                   </div>
                 </div>
@@ -147,6 +171,14 @@ export default function Loop() {
           );
         })}
       </div>
+
+      {commentPostId && (
+        <CommentsSheet
+          postId={commentPostId}
+          onClose={() => setCommentPostId(null)}
+          onCountChange={() => {}}
+        />
+      )}
 
       <BottomNav />
     </div>
