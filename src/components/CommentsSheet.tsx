@@ -159,20 +159,18 @@ export default function CommentsSheet({ postId, onClose, onCountChange }: Commen
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendComment(); } }}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-2"
+                className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
                 placeholder="Ajouter un commentaire..."
                 enterKeyHint="send"
                 autoComplete="off"
               />
-              {input.trim() && (
-                <button
-                  onClick={sendComment}
-                  disabled={loading}
-                  className="text-primary font-bold text-sm disabled:opacity-50"
-                >
-                  Publier
-                </button>
-              )}
+              <button
+                onClick={sendComment}
+                disabled={!input.trim() || loading}
+                className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-30 shrink-0"
+              >
+                <Send size={16} />
+              </button>
             </div>
           </div>
         )}
