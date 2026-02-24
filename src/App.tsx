@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -28,6 +29,47 @@ import Admin from "./pages/Admin";
 
 const queryClient = new QueryClient();
 
+// Android hardware back button handler
+function BackButtonHandler() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const handlePopState = () => {
+      // Let the browser handle it naturally via React Router
+    };
+
+    // For Capacitor: listen to the hardware back button
+    const setupCapacitorBackButton = async () => {
+      try {
+        // Dynamic import to avoid build errors when not in Capacitor
+        const capacitorApp = await import("@capacitor/app" as string);
+        const CapApp = capacitorApp.App;
+        if (CapApp?.addListener) {
+          CapApp.addListener("backButton", ({ canGoBack }: { canGoBack: boolean }) => {
+            const mainRoutes = ["/", "/login"];
+            if (mainRoutes.includes(location.pathname) && !canGoBack) {
+              CapApp.minimizeApp();
+            } else {
+              navigate(-1);
+            }
+          });
+        }
+      } catch {
+        // Not running in Capacitor, ignore
+      }
+    };
+
+    setupCapacitorBackButton();
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [navigate, location.pathname]);
+
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -35,6 +77,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <BackButtonHandler />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />

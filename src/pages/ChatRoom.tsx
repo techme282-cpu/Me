@@ -2,12 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, Reply, Trash2, Eye, Pencil, X, MoreVertical } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { ArrowLeft, Send, Reply, Trash2, Eye, Pencil, X } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import StickerPicker from "@/components/StickerPicker";
 import MessageContent from "@/components/MessageContent";
+import CertificationBadge from "@/components/CertificationBadge";
 
 export default function ChatRoom() {
   const { partnerId } = useParams<{ partnerId: string }>();
@@ -19,7 +20,6 @@ export default function ChatRoom() {
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
   const [selectedMsg, setSelectedMsg] = useState<string | null>(null);
-  const [viewOnce, setViewOnce] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,9 +79,9 @@ export default function ChatRoom() {
     }
 
     if (!content) setInput("");
-    const insertData: any = { sender_id: user.id, receiver_id: partnerId, content: text, is_view_once: viewOnce };
+    const insertData: any = { sender_id: user.id, receiver_id: partnerId, content: text };
     if (!content && replyTo) insertData.reply_to = replyTo.id;
-    if (!content) { setReplyTo(null); setViewOnce(false); }
+    if (!content) setReplyTo(null);
     await supabase.from("messages").insert(insertData);
   };
 
@@ -115,29 +115,45 @@ export default function ChatRoom() {
   const isSticker = (content: string) => content?.startsWith("[STICKER:");
   const getRepliedMsg = (replyId: string | null) => replyId ? messages.find((m) => m.id === replyId) : null;
 
+  const isOnline = partner?.last_seen && (Date.now() - new Date(partner.last_seen).getTime() < 2 * 60 * 1000);
+  const lastSeenText = partner?.last_seen
+    ? isOnline ? "En ligne" : `Vu ${formatDistanceToNow(new Date(partner.last_seen), { addSuffix: true, locale: fr })}`
+    : "";
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-[hsl(var(--secondary))]/30">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background border-b border-border shrink-0">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-lg border-b border-border shrink-0">
         <div className="flex items-center gap-3 px-4 h-14 max-w-lg mx-auto">
           <button onClick={() => navigate("/chat")} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft size={22} />
           </button>
-          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground font-bold text-sm overflow-hidden">
-            {partner?.avatar_url ? (
-              <img src={partner.avatar_url} className="w-full h-full object-cover" alt="" />
-            ) : (
-              partner?.username?.[0]?.toUpperCase() || "?"
+          <div
+            className="relative cursor-pointer"
+            onClick={() => navigate(`/user/${partnerId}`)}
+          >
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground font-bold text-sm overflow-hidden">
+              {partner?.avatar_url ? (
+                <img src={partner.avatar_url} className="w-full h-full object-cover" alt="" />
+              ) : (
+                partner?.username?.[0]?.toUpperCase() || "?"
+              )}
+            </div>
+            {isOnline && (
+              <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-foreground text-sm">{partner?.display_name || partner?.username}</p>
-            <p className="text-xs text-muted-foreground">@{partner?.username}</p>
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/user/${partnerId}`)}>
+            <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-foreground text-sm">{partner?.display_name || partner?.username}</p>
+              <CertificationBadge type={partner?.certification_type} size={14} />
+            </div>
+            <p className="text-[11px] text-muted-foreground">{lastSeenText || `@${partner?.username}`}</p>
           </div>
         </div>
       </header>
 
-      {/* Chat wallpaper background */}
+      {/* Chat area */}
       <main className="flex-1 overflow-y-auto px-3 py-3 max-w-lg mx-auto w-full space-y-1 chat-wallpaper">
         {messages.map((msg) => {
           const mine = msg.sender_id === user?.id;
@@ -152,7 +168,6 @@ export default function ChatRoom() {
                 className="relative max-w-[80%]"
                 onClick={() => setSelectedMsg(selectedMsg === msg.id ? null : msg.id)}
               >
-                {/* Replied message preview */}
                 {replied && (
                   <div className={`text-[11px] px-3 py-1.5 rounded-t-xl border-l-2 border-primary mb-0.5 ${mine ? "bg-primary/20 text-primary-foreground/70" : "bg-muted text-muted-foreground"}`}>
                     <span className="font-semibold">{replied.sender_id === user?.id ? "Vous" : partner?.username}</span>
@@ -173,19 +188,18 @@ export default function ChatRoom() {
                     <Eye size={14} className="inline mr-1" /> Message éphémère ouvert
                   </div>
                 ) : (
-                  <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
+                  <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-[hsl(195,100%,35%)] text-white rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
                     {isViewOnce && <Eye size={12} className="inline mr-1 opacity-60" />}
                     <MessageContent content={msg.content} isMine={mine} />
                     <div className={`flex items-center gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      <span className={`text-[10px] ${mine ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
-                        {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
+                      <span className={`text-[10px] ${mine ? "text-white/50" : "text-muted-foreground"}`}>
+                        {format(new Date(msg.created_at), "HH:mm")}
                       </span>
-                      {mine && <span className={`text-[10px] ${msg.is_read ? "text-blue-300" : "text-primary-foreground/40"}`}>{msg.is_read ? "✓✓" : "✓"}</span>}
+                      {mine && <span className={`text-[10px] ${msg.is_read ? "text-blue-300" : "text-white/40"}`}>{msg.is_read ? "✓✓" : "✓"}</span>}
                     </div>
                   </div>
                 )}
 
-                {/* Context menu */}
                 {selectedMsg === msg.id && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={(e) => { e.stopPropagation(); setSelectedMsg(null); }} />
@@ -232,18 +246,10 @@ export default function ChatRoom() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="bg-background border-t border-border p-3 shrink-0">
+      {/* Input - removed Eye button */}
+      <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
         <div className="flex gap-2 max-w-lg mx-auto items-center">
           <StickerPicker onSendSticker={sendSticker} />
-          {/* View once toggle */}
-          <button
-            onClick={() => setViewOnce(!viewOnce)}
-            className={`p-2 rounded-full transition-colors ${viewOnce ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
-            title="Message éphémère"
-          >
-            <Eye size={18} />
-          </button>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
