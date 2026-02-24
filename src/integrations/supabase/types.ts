@@ -412,6 +412,7 @@ export type Database = {
           ban_reason: string | null
           bio: string | null
           certification_type: string | null
+          chat_wallpaper: string | null
           clan: string | null
           created_at: string | null
           display_name: string | null
@@ -419,6 +420,7 @@ export type Database = {
           is_banned: boolean | null
           is_private: boolean | null
           is_verified: boolean | null
+          last_seen: string | null
           updated_at: string | null
           user_id: string
           username: string
@@ -428,6 +430,7 @@ export type Database = {
           ban_reason?: string | null
           bio?: string | null
           certification_type?: string | null
+          chat_wallpaper?: string | null
           clan?: string | null
           created_at?: string | null
           display_name?: string | null
@@ -435,6 +438,7 @@ export type Database = {
           is_banned?: boolean | null
           is_private?: boolean | null
           is_verified?: boolean | null
+          last_seen?: string | null
           updated_at?: string | null
           user_id: string
           username: string
@@ -444,6 +448,7 @@ export type Database = {
           ban_reason?: string | null
           bio?: string | null
           certification_type?: string | null
+          chat_wallpaper?: string | null
           clan?: string | null
           created_at?: string | null
           display_name?: string | null
@@ -451,6 +456,7 @@ export type Database = {
           is_banned?: boolean | null
           is_private?: boolean | null
           is_verified?: boolean | null
+          last_seen?: string | null
           updated_at?: string | null
           user_id?: string
           username?: string

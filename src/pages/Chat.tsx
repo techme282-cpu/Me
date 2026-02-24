@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import BottomNav from "@/components/BottomNav";
+import CertificationBadge from "@/components/CertificationBadge";
 import { MessageCircle, Search, Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
@@ -39,9 +40,17 @@ export default function Chat() {
       const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
       if (partnerId && !seen.has(partnerId)) {
         seen.add(partnerId);
-        // fetch partner profile
-        const { data: prof } = await supabase.from("profiles").select("username, display_name, avatar_url, certification_type, is_verified").eq("user_id", partnerId).maybeSingle();
-        convos.push({ ...msg, partnerId, profile: prof });
+        const { data: prof } = await supabase.from("profiles").select("username, display_name, avatar_url, certification_type, is_verified, last_seen").eq("user_id", partnerId).maybeSingle();
+        // Count unread from this partner
+        const { count } = await supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("sender_id", partnerId)
+          .eq("receiver_id", user.id)
+          .eq("is_read", false)
+          .is("group_id", null)
+          .is("deleted_at", null);
+        convos.push({ ...msg, partnerId, profile: prof, unreadCount: count || 0 });
       }
     }
     setConversations(convos);
@@ -49,13 +58,11 @@ export default function Chat() {
 
   const fetchGroups = async () => {
     if (!user) return;
-    // Get groups the user is member of
     const { data: memberships } = await supabase.from("group_members").select("group_id").eq("user_id", user.id);
     if (!memberships?.length) { setGroups([]); return; }
     const groupIds = memberships.map((m) => m.group_id);
     const { data: groupsData } = await supabase.from("groups").select("*").in("id", groupIds).eq("status", "active").order("created_at", { ascending: false });
 
-    // Get last message for each group
     const enriched = await Promise.all(
       (groupsData || []).map(async (g) => {
         const { data: lastMsg } = await supabase
@@ -66,7 +73,15 @@ export default function Chat() {
           .order("created_at", { ascending: false })
           .limit(1);
         const { count } = await supabase.from("group_members").select("*", { count: "exact", head: true }).eq("group_id", g.id);
-        return { ...g, lastMessage: lastMsg?.[0] || null, memberCount: count || 0 };
+        
+        // Get last message sender profile
+        let lastSenderName: string | null = null;
+        if (lastMsg?.[0]?.sender_id) {
+          const { data: senderProf } = await supabase.from("profiles").select("username, display_name").eq("user_id", lastMsg[0].sender_id).maybeSingle();
+          lastSenderName = senderProf?.display_name || senderProf?.username || null;
+        }
+        
+        return { ...g, lastMessage: lastMsg?.[0] || null, memberCount: count || 0, lastSenderName };
       })
     );
     setGroups(enriched);
@@ -92,6 +107,11 @@ export default function Chat() {
     !search || g.name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const isOnline = (lastSeen: string | null) => {
+    if (!lastSeen) return false;
+    return Date.now() - new Date(lastSeen).getTime() < 2 * 60 * 1000; // 2 minutes
+  };
+
   return (
     <div className="min-h-screen pb-20">
       <header className="sticky top-0 z-40 glass border-b border-border">
@@ -99,7 +119,6 @@ export default function Chat() {
           <h2 className="font-display font-bold text-foreground text-lg">Messages</h2>
           <button onClick={() => navigate("/create-group")} className="p-2 text-primary"><Plus size={22} /></button>
         </div>
-        {/* Tabs */}
         <div className="flex max-w-lg mx-auto px-4 gap-1">
           {(["dms", "groups"] as const).map((t) => (
             <button
@@ -133,35 +152,51 @@ export default function Chat() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {filteredConvos.map((conv) => (
-                <button
-                  key={conv.id}
-                  onClick={() => navigate(`/chat/${conv.partnerId}`)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
-                >
-                  <div className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold shrink-0 overflow-hidden">
-                    {conv.profile?.avatar_url ? (
-                      <img src={conv.profile.avatar_url} className="w-full h-full object-cover" alt="" />
-                    ) : (
-                      conv.profile?.username?.[0]?.toUpperCase() || "?"
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline">
-                      <p className="font-medium text-foreground text-sm truncate">{conv.profile?.display_name || conv.profile?.username}</p>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatDistanceToNow(new Date(conv.created_at), { addSuffix: true, locale: fr })}
-                      </span>
+              {filteredConvos.map((conv) => {
+                const online = isOnline(conv.profile?.last_seen);
+                return (
+                  <button
+                    key={conv.id}
+                    onClick={() => navigate(`/chat/${conv.partnerId}`)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
+                  >
+                    <div className="relative shrink-0">
+                      <div
+                        className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold overflow-hidden cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/user/${conv.partnerId}`); }}
+                      >
+                        {conv.profile?.avatar_url ? (
+                          <img src={conv.profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          conv.profile?.username?.[0]?.toUpperCase() || "?"
+                        )}
+                      </div>
+                      {online && (
+                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-background" />
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {conv.content?.startsWith("[STICKER:") ? "🎭 Sticker" : conv.content}
-                    </p>
-                  </div>
-                  {!conv.is_read && conv.receiver_id === user?.id && (
-                    <div className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
-                  )}
-                </button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="font-medium text-foreground text-sm truncate">{conv.profile?.display_name || conv.profile?.username}</p>
+                          <CertificationBadge type={conv.profile?.certification_type} size={14} />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {formatDistanceToNow(new Date(conv.created_at), { addSuffix: true, locale: fr })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {conv.content?.startsWith("[STICKER:") ? "🎭 Sticker" : conv.content}
+                      </p>
+                    </div>
+                    {conv.unreadCount > 0 && (
+                      <span className="min-w-[20px] h-[20px] flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold px-1 shrink-0">
+                        {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )
         ) : (
@@ -198,7 +233,14 @@ export default function Chat() {
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground truncate">
-                      {g.lastMessage?.content?.startsWith("[STICKER:") ? "🎭 Sticker" : g.lastMessage ? g.lastMessage.content : `${g.memberCount} membre${g.memberCount > 1 ? "s" : ""}`}
+                      {g.lastMessage ? (
+                        <>
+                          {g.lastSenderName && <span className="font-medium text-foreground/70">{g.lastSenderName}: </span>}
+                          {g.lastMessage.content?.startsWith("[STICKER:") ? "🎭 Sticker" : g.lastMessage.content}
+                        </>
+                      ) : (
+                        `${g.memberCount} membre${g.memberCount > 1 ? "s" : ""}`
+                      )}
                     </p>
                   </div>
                 </button>

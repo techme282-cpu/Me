@@ -2,12 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Eye, Pencil, X } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Eye, Pencil, X, AtSign } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import StickerPicker from "@/components/StickerPicker";
 import MessageContent from "@/components/MessageContent";
+import CertificationBadge from "@/components/CertificationBadge";
 
 export default function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -21,9 +22,11 @@ export default function GroupChat() {
   const [replyTo, setReplyTo] = useState<any>(null);
   const [editMsg, setEditMsg] = useState<any>(null);
   const [selectedMsg, setSelectedMsg] = useState<string | null>(null);
-  const [viewOnce, setViewOnce] = useState(false);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (groupId && user) {
@@ -87,6 +90,40 @@ export default function GroupChat() {
     return () => { supabase.removeChannel(channel); };
   }, [groupId, user?.id]);
 
+  // Handle @ mention detection
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInput(val);
+
+    // Check if user is typing @mention
+    const lastAt = val.lastIndexOf("@");
+    if (lastAt !== -1 && (lastAt === 0 || val[lastAt - 1] === " ")) {
+      const query = val.slice(lastAt + 1);
+      if (!query.includes(" ")) {
+        setMentionSearch(query.toLowerCase());
+        setShowMentions(true);
+        return;
+      }
+    }
+    setShowMentions(false);
+  };
+
+  const insertMention = (profile: any) => {
+    const lastAt = input.lastIndexOf("@");
+    const before = input.slice(0, lastAt);
+    const mention = `@${profile.username} `;
+    setInput(before + mention);
+    setShowMentions(false);
+    inputRef.current?.focus();
+  };
+
+  const filteredMentions = Object.values(profiles).filter(
+    (p: any) =>
+      p.user_id !== user?.id &&
+      (p.username?.toLowerCase().includes(mentionSearch) ||
+        p.display_name?.toLowerCase().includes(mentionSearch))
+  );
+
   const sendMessage = async (contentOverride?: string) => {
     const text = (contentOverride || input).trim();
     if (!text || !user || !groupId) return;
@@ -100,9 +137,9 @@ export default function GroupChat() {
     }
 
     if (!contentOverride) setInput("");
-    const insertData: any = { sender_id: user.id, group_id: groupId, content: text, is_view_once: !contentOverride && viewOnce };
+    const insertData: any = { sender_id: user.id, group_id: groupId, content: text };
     if (!contentOverride && replyTo) insertData.reply_to = replyTo.id;
-    if (!contentOverride) { setReplyTo(null); setViewOnce(false); }
+    if (!contentOverride) setReplyTo(null);
     await supabase.from("messages").insert(insertData);
     if (!contentOverride) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
@@ -136,10 +173,44 @@ export default function GroupChat() {
   const getSystemText = (msg: any) => msg.content.replace("[SYSTEM] ", "");
   const isSticker = (content: string) => content?.startsWith("[STICKER:");
 
+  // Highlight @mentions in message text
+  const renderContent = (msg: any, mine: boolean) => {
+    const content = msg.content;
+    // Check for @username mentions
+    const mentionRegex = /@(\w+)/g;
+    const parts = content.split(mentionRegex);
+    if (parts.length <= 1) {
+      return <MessageContent content={content} isMine={mine} />;
+    }
+    return (
+      <span>
+        {parts.map((part: string, i: number) => {
+          if (i % 2 === 1) {
+            // This is a username match
+            const mentionedProfile = Object.values(profiles).find((p: any) => p.username === part);
+            return (
+              <span
+                key={i}
+                className={`font-semibold cursor-pointer ${mine ? "text-white underline" : "text-primary"}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (mentionedProfile) navigate(`/user/${mentionedProfile.user_id}`);
+                }}
+              >
+                @{part}
+              </span>
+            );
+          }
+          return <MessageContent key={i} content={part} isMine={mine} />;
+        })}
+      </span>
+    );
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="z-40 bg-background border-b border-border shrink-0">
+      <header className="z-40 bg-background/95 backdrop-blur-lg border-b border-border shrink-0">
         <div className="flex items-center gap-3 px-4 h-14 max-w-lg mx-auto">
           <button onClick={() => navigate("/chat")} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft size={22} />
@@ -151,7 +222,7 @@ export default function GroupChat() {
               group?.name?.[0]?.toUpperCase() || "G"
             )}
           </div>
-          <div className="flex-1 min-w-0" onClick={() => navigate(`/group/${groupId}/settings`)} role="button">
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/group/${groupId}/settings`)} role="button">
             <p className="font-semibold text-foreground text-sm truncate">{group?.name || "Groupe"}</p>
             <p className="text-xs text-muted-foreground">{members.length} membre{members.length > 1 ? "s" : ""}</p>
           </div>
@@ -161,7 +232,7 @@ export default function GroupChat() {
         </div>
       </header>
 
-      {/* Messages - WhatsApp-style wallpaper */}
+      {/* Messages */}
       <main className="flex-1 overflow-y-auto px-3 py-3 max-w-lg mx-auto w-full space-y-1 chat-wallpaper">
         {messages.map((msg) => {
           if (isSystemMessage(msg)) {
@@ -182,11 +253,23 @@ export default function GroupChat() {
 
           return (
             <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              {/* Avatar for others */}
+              {!mine && (
+                <div
+                  className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold mr-1.5 mt-auto shrink-0 overflow-hidden cursor-pointer"
+                  onClick={() => sender && navigate(`/user/${sender.user_id}`)}
+                >
+                  {sender?.avatar_url ? (
+                    <img src={sender.avatar_url} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    sender?.username?.[0]?.toUpperCase() || "?"
+                  )}
+                </div>
+              )}
               <div
-                className="relative max-w-[80%]"
+                className="relative max-w-[75%]"
                 onClick={() => setSelectedMsg(selectedMsg === msg.id ? null : msg.id)}
               >
-                {/* Reply preview */}
                 {replied && (
                   <div className={`text-[11px] px-3 py-1.5 rounded-t-xl border-l-2 border-primary mb-0.5 ${mine ? "bg-primary/20 text-primary-foreground/70" : "bg-muted text-muted-foreground"}`}>
                     <span className="font-semibold">{profiles[replied.sender_id]?.username || "?"}</span>
@@ -196,10 +279,15 @@ export default function GroupChat() {
 
                 {stickerMsg ? (
                   <div className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
-                    {!mine && <p className="text-xs font-semibold text-primary px-1">{sender?.display_name || sender?.username || "?"}</p>}
+                    {!mine && (
+                      <p className="text-xs font-semibold text-primary px-1 flex items-center gap-1">
+                        {sender?.display_name || sender?.username || "?"}
+                        <CertificationBadge type={sender?.certification_type} size={12} />
+                      </p>
+                    )}
                     <MessageContent content={msg.content} />
                     <p className="text-[10px] text-muted-foreground px-1">
-                      {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
+                      {format(new Date(msg.created_at), "HH:mm")}
                     </p>
                   </div>
                 ) : viewOnceHidden ? (
@@ -207,26 +295,26 @@ export default function GroupChat() {
                     <Eye size={14} className="inline mr-1" /> Message éphémère ouvert
                   </div>
                 ) : (
-                  <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
+                  <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-[hsl(195,100%,35%)] text-white rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
                     {!mine && (
-                      <p className="text-xs font-semibold text-primary/80 mb-0.5 flex items-center gap-1">
-                        {sender?.display_name || sender?.username || "?"}
+                      <p className="text-xs font-semibold mb-0.5 flex items-center gap-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); sender && navigate(`/user/${sender.user_id}`); }}>
+                        <span className={mine ? "text-white/80" : "text-primary/80"}>{sender?.display_name || sender?.username || "?"}</span>
+                        <CertificationBadge type={sender?.certification_type} size={12} />
                         {senderMembership?.role === "owner" && <span className="text-amber-500 text-[10px]">👑</span>}
                         {senderMembership?.role === "admin" && <span className="text-[10px] opacity-70">Admin</span>}
                       </p>
                     )}
                     {isViewOnce && <Eye size={12} className="inline mr-1 opacity-60" />}
-                    <MessageContent content={msg.content} isMine={mine} />
+                    {renderContent(msg, mine)}
                     <div className={`flex items-center gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      <span className={`text-[10px] ${mine ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
-                        {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
+                      <span className={`text-[10px] ${mine ? "text-white/50" : "text-muted-foreground"}`}>
+                        {format(new Date(msg.created_at), "HH:mm")}
                       </span>
-                      {mine && <span className={`text-[10px] ${msg.is_read ? "text-blue-300" : "text-primary-foreground/40"}`}>{msg.is_read ? "✓✓" : "✓"}</span>}
+                      {mine && <span className={`text-[10px] ${msg.is_read ? "text-blue-300" : "text-white/40"}`}>{msg.is_read ? "✓✓" : "✓"}</span>}
                     </div>
                   </div>
                 )}
 
-                {/* Context menu on tap */}
                 {selectedMsg === msg.id && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={(e) => { e.stopPropagation(); setSelectedMsg(null); }} />
@@ -268,27 +356,43 @@ export default function GroupChat() {
         </div>
       )}
 
-      {/* Input */}
+      {/* @ Mention picker */}
+      {showMentions && filteredMentions.length > 0 && (
+        <div className="bg-card border-t border-border max-w-lg mx-auto w-full max-h-40 overflow-y-auto">
+          {filteredMentions.slice(0, 8).map((p: any) => (
+            <button
+              key={p.user_id}
+              onClick={() => insertMention(p)}
+              className="w-full flex items-center gap-2 px-4 py-2 hover:bg-secondary/50 text-left"
+            >
+              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : p.username?.[0]?.toUpperCase()}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-foreground font-medium">{p.display_name || p.username}</span>
+                <CertificationBadge type={p.certification_type} size={12} />
+                <span className="text-xs text-muted-foreground">@{p.username}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input - removed Eye button */}
       {isMember ? (
         canSend ? (
-          <div className="bg-background border-t border-border p-3 shrink-0">
+          <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
             <div className="flex gap-2 max-w-lg mx-auto items-center">
               <StickerPicker onSendSticker={sendSticker} />
-              <button
-                onClick={() => setViewOnce(!viewOnce)}
-                className={`p-2 rounded-full transition-colors ${viewOnce ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                title="Message éphémère"
-              >
-                <Eye size={18} />
-              </button>
               <input
+                ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
+                onChange={handleInputChange}
+                onKeyDown={(e) => { if (e.key === "Enter") { setShowMentions(false); sendMessage(); } }}
                 className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
                 placeholder={editMsg ? "Modifier le message..." : "Écrire un message..."}
               />
-              <button onClick={() => sendMessage()} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
+              <button onClick={() => { setShowMentions(false); sendMessage(); }} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
                 <Send size={18} />
               </button>
             </div>
