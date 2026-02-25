@@ -2,13 +2,17 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { LogIn, Eye, EyeOff } from "lucide-react";
+import { LogIn, Eye, EyeOff, AlertTriangle, Send } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [banInfo, setBanInfo] = useState<{ reason: string; userId: string } | null>(null);
+  const [appealSent, setAppealSent] = useState(false);
+  const [appealLoading, setAppealLoading] = useState(false);
   const { signIn } = useAuth();
   const navigate = useNavigate();
 
@@ -19,8 +23,95 @@ export default function Login() {
     const { error } = await signIn(email, password);
     setLoading(false);
     if (error) { toast.error(error.message); return; }
+
+    // Check if user is banned
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_banned, ban_reason")
+        .eq("user_id", user.id)
+        .single();
+
+      if (profile?.is_banned) {
+        setBanInfo({ reason: profile.ban_reason || "Compte inactif", userId: user.id });
+        await supabase.auth.signOut();
+        return;
+      }
+    }
+
     navigate("/");
   };
+
+  const handleAppeal = async () => {
+    if (!banInfo) return;
+    setAppealLoading(true);
+
+    // Sign back in temporarily to submit appeal
+    const { error: signError } = await signIn(email, password);
+    if (signError) {
+      toast.error("Impossible de soumettre la demande");
+      setAppealLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.from("account_reviews").insert({
+      user_id: banInfo.userId,
+      reason: banInfo.reason,
+    });
+
+    await supabase.auth.signOut();
+    setAppealLoading(false);
+
+    if (error) {
+      toast.error("Erreur: " + error.message);
+    } else {
+      setAppealSent(true);
+      toast.success("Demande d'examen envoyée !");
+    }
+  };
+
+  // Ban screen
+  if (banInfo) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+            <AlertTriangle size={40} className="text-destructive" />
+          </div>
+          <h1 className="text-2xl font-display font-bold text-destructive">Account Banned</h1>
+          <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
+            <p className="text-sm font-medium text-foreground">Raison :</p>
+            <p className="text-sm text-muted-foreground">{banInfo.reason}</p>
+          </div>
+
+          {appealSent ? (
+            <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4">
+              <p className="text-sm text-green-500 font-medium">
+                Votre demande est en cours d'examen. Merci d'attendre 24h.
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={handleAppeal}
+              disabled={appealLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 gradient-primary text-primary-foreground rounded-2xl font-medium text-sm disabled:opacity-50"
+            >
+              <Send size={18} />
+              {appealLoading ? "Envoi..." : "Demander un examen"}
+            </button>
+          )}
+
+          <button
+            onClick={() => { setBanInfo(null); setAppealSent(false); }}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Retour à la connexion
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6">

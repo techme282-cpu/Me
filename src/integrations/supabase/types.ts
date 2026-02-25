@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          reason: string | null
+          reviewed_at: string | null
+          status: string
+          submitted_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reviewed_at?: string | null
+          status?: string
+          submitted_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: string | null
+          reviewed_at?: string | null
+          status?: string
+          submitted_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       banned_emails: {
         Row: {
           banned_by: string
@@ -69,6 +99,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      certification_requests: {
+        Row: {
+          analyzed_at: string | null
+          cert_type: string
+          clan: string
+          clan_role: string
+          created_at: string
+          full_name: string
+          id: string
+          reason: string
+          rejection_reason: string | null
+          status: string
+          submitted_at: string
+          user_id: string
+        }
+        Insert: {
+          analyzed_at?: string | null
+          cert_type?: string
+          clan: string
+          clan_role: string
+          created_at?: string
+          full_name: string
+          id?: string
+          reason: string
+          rejection_reason?: string | null
+          status?: string
+          submitted_at?: string
+          user_id: string
+        }
+        Update: {
+          analyzed_at?: string | null
+          cert_type?: string
+          clan?: string
+          clan_role?: string
+          created_at?: string
+          full_name?: string
+          id?: string
+          reason?: string
+          rejection_reason?: string | null
+          status?: string
+          submitted_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       comments: {
         Row: {
