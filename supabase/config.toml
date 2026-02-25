@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.telegram-stickers]
 verify_jwt = false
+
+[functions.process-certifications]
+verify_jwt = false
+
+[functions.cleanup-inactive-accounts]
+verify_jwt = false
