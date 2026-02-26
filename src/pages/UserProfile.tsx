@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import PostCard from "@/components/PostCard";
-import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, MessageCircle } from "lucide-react";
+import { ArrowLeft, Lock, Flag, UserPlus, UserMinus, Grid3X3, Bookmark, MessageCircle, Ban, X } from "lucide-react";
 import { toast } from "sonner";
 import CertificationBadge from "@/components/CertificationBadge";
 import { sendNotification } from "@/lib/notifications";
@@ -22,6 +22,8 @@ export default function UserProfile() {
   const [activeTab, setActiveTab] = useState<"posts" | "favorites">("posts");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [showFollowersList, setShowFollowersList] = useState<"followers" | "following" | null>(null);
+  const [followersList, setFollowersList] = useState<any[]>([]);
 
   useEffect(() => {
     if (userId) fetchData();
@@ -49,23 +51,19 @@ export default function UserProfile() {
       }
     }
 
+    // If banned, don't load posts
+    if (p?.is_banned) return;
+
     const canSee = !p?.is_private || (user && (currentFollowStatus === "accepted" || userId === user.id));
     if (canSee) {
       const { data: postsData } = await supabase
-        .from("posts")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
+        .from("posts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
       setPosts((postsData || []).map((post: any) => ({
         ...post,
         profiles: p ? { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url, certification_type: p.certification_type } : null,
       })));
 
-      // Fetch favorites
-      const { data: favData } = await supabase
-        .from("post_favorites")
-        .select("post_id")
-        .eq("user_id", userId);
+      const { data: favData } = await supabase.from("post_favorites").select("post_id").eq("user_id", userId);
       if (favData?.length) {
         const postIds = favData.map((f: any) => f.post_id);
         const { data: favPosts } = await supabase.from("posts").select("*").in("id", postIds).order("created_at", { ascending: false });
@@ -77,7 +75,6 @@ export default function UserProfile() {
         }
       }
 
-      // Fetch current user's likes/saves for display
       if (user) {
         const [likes, saves] = await Promise.all([
           supabase.from("post_likes").select("post_id").eq("user_id", user.id),
@@ -103,7 +100,6 @@ export default function UserProfile() {
       if (status === "accepted") { setIsFollowing(true); setFollowers((c) => c + 1); }
       else toast.info("Demande envoyée");
 
-      // Send follow notification
       const { data: myProfile } = await supabase.from("profiles").select("username").eq("user_id", user.id).single();
       sendNotification({
         userId,
@@ -123,7 +119,48 @@ export default function UserProfile() {
     toast.success("Signalement envoyé");
   };
 
+  const loadFollowList = async (type: "followers" | "following") => {
+    if (!userId) return;
+    setShowFollowersList(type);
+    setFollowersList([]);
+    
+    let userIds: string[] = [];
+    if (type === "followers") {
+      const { data } = await supabase.from("follows").select("follower_id").eq("following_id", userId).eq("status", "accepted");
+      userIds = (data || []).map(f => f.follower_id);
+    } else {
+      const { data } = await supabase.from("follows").select("following_id").eq("follower_id", userId).eq("status", "accepted");
+      userIds = (data || []).map(f => f.following_id);
+    }
+    
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from("profiles").select("user_id, username, display_name, avatar_url, certification_type, is_banned").in("user_id", userIds);
+      setFollowersList(profiles || []);
+    }
+  };
+
   if (!profile) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+
+  // Banned profile view
+  if (profile.is_banned) {
+    return (
+      <div className="min-h-screen pb-6">
+        <header className="sticky top-0 z-40 glass border-b border-border">
+          <div className="flex items-center gap-3 px-4 h-14 max-w-lg mx-auto">
+            <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-foreground"><ArrowLeft size={22} /></button>
+            <h2 className="font-display font-bold text-foreground">@{profile.username}</h2>
+          </div>
+        </header>
+        <div className="flex flex-col items-center justify-center py-20 px-6 space-y-4">
+          <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+            <Ban size={40} className="text-destructive" />
+          </div>
+          <h2 className="text-xl font-bold text-destructive">Compte banni par Purge Hub 🚫</h2>
+          <p className="text-sm text-muted-foreground text-center">Ce compte a été banni et n'est plus accessible.</p>
+        </div>
+      </div>
+    );
+  }
 
   const displayPosts = activeTab === "posts" ? posts : favorites;
 
@@ -143,8 +180,8 @@ export default function UserProfile() {
           </div>
           <div className="flex gap-6 text-center">
             <div><p className="font-bold text-foreground">{posts.length}</p><p className="text-xs text-muted-foreground">Posts</p></div>
-            <div><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></div>
-            <div><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></div>
+            <button onClick={() => loadFollowList("followers")}><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></button>
+            <button onClick={() => loadFollowList("following")}><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></button>
           </div>
         </div>
 
@@ -174,11 +211,11 @@ export default function UserProfile() {
         {profile.is_private && !isFollowing && user?.id !== userId ? (
           <div className="text-center py-12 space-y-3">
             <Lock size={40} className="mx-auto text-muted-foreground" />
-            <p className="text-muted-foreground">Ce compte est privé</p>
+            <p className="text-lg font-semibold text-foreground">Compte Privé 🔒</p>
+            <p className="text-sm text-muted-foreground">Seuls les abonnés peuvent voir les publications.</p>
           </div>
         ) : (
           <>
-            {/* Tabs */}
             <div className="flex border-b border-border">
               <button
                 onClick={() => setActiveTab("posts")}
@@ -201,18 +238,55 @@ export default function UserProfile() {
                 </p>
               ) : (
                 displayPosts.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    isLiked={likedIds.has(post.id)}
-                    isSaved={savedIds.has(post.id)}
-                  />
+                  <PostCard key={post.id} post={post} isLiked={likedIds.has(post.id)} isSaved={savedIds.has(post.id)} />
                 ))
               )}
             </div>
           </>
         )}
       </main>
+
+      {/* Followers/Following modal */}
+      {showFollowersList && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={() => setShowFollowersList(null)}>
+          <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h3 className="font-bold text-foreground">{showFollowersList === "followers" ? "Followers" : "Following"}</h3>
+              <button onClick={() => setShowFollowersList(null)} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+            </div>
+            <div className="overflow-y-auto max-h-[60vh] divide-y divide-border/50">
+              {followersList.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-10">Aucun résultat</p>
+              ) : (
+                followersList.map((p) => (
+                  <button
+                    key={p.user_id}
+                    onClick={() => { setShowFollowersList(null); navigate(`/user/${p.user_id}`); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-sm overflow-hidden">
+                      {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full rounded-full object-cover" alt="" /> : p.username?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="text-left flex-1">
+                      {p.is_banned ? (
+                        <p className="text-sm text-destructive font-medium flex items-center gap-1"><Ban size={12} /> Banni</p>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-foreground flex items-center gap-1">
+                            {p.display_name || p.username}
+                            <CertificationBadge type={p.certification_type} size={12} />
+                          </p>
+                          <p className="text-xs text-muted-foreground">@{p.username}</p>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

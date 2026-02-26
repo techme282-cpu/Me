@@ -19,7 +19,8 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No auth header");
     
-    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!);
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const anonClient = createClient(supabaseUrl, anonKey);
     const { data: { user: caller } } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
     if (!caller) throw new Error("Unauthorized");
 
@@ -33,11 +34,12 @@ Deno.serve(async (req) => {
     const { data: { user: targetUser } } = await supabase.auth.admin.getUserById(userId);
     if (!targetUser) throw new Error("User not found");
 
-    // Delete all user data in cascade
+    // Delete all user data in order (comments first due to post FK)
+    await supabase.from("comments").delete().eq("user_id", userId);
+    await supabase.from("post_likes").delete().eq("user_id", userId);
+    await supabase.from("post_favorites").delete().eq("user_id", userId);
+    
     await Promise.all([
-      supabase.from("comments").delete().eq("user_id", userId),
-      supabase.from("post_likes").delete().eq("user_id", userId),
-      supabase.from("post_favorites").delete().eq("user_id", userId),
       supabase.from("follows").delete().eq("follower_id", userId),
       supabase.from("follows").delete().eq("following_id", userId),
       supabase.from("messages").delete().eq("sender_id", userId),
@@ -46,9 +48,19 @@ Deno.serve(async (req) => {
       supabase.from("group_members").delete().eq("user_id", userId),
       supabase.from("stories").delete().eq("user_id", userId),
       supabase.from("reports").delete().eq("reporter_id", userId),
+      supabase.from("certification_requests").delete().eq("user_id", userId),
+      supabase.from("account_reviews").delete().eq("user_id", userId),
     ]);
 
-    // Delete posts
+    // Delete posts (comments on user's posts should cascade via FK, but let's be safe)
+    const { data: userPosts } = await supabase.from("posts").select("id").eq("user_id", userId);
+    if (userPosts && userPosts.length > 0) {
+      const postIds = userPosts.map(p => p.id);
+      await supabase.from("comments").delete().in("post_id", postIds);
+      await supabase.from("post_likes").delete().in("post_id", postIds);
+      await supabase.from("post_favorites").delete().in("post_id", postIds);
+      await supabase.from("reports").delete().in("reported_post_id", postIds);
+    }
     await supabase.from("posts").delete().eq("user_id", userId);
 
     // Delete profile
@@ -73,6 +85,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error("admin-delete-account error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

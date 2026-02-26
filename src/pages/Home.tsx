@@ -93,18 +93,21 @@ export default function Home() {
 
     
 
-    // Fetch profiles for all posts
+    // Fetch profiles for all posts - filter out banned users
     const userIds = [...new Set((postsData || []).map((p: any) => p.user_id))];
     const { data: profilesData } = await supabase
       .from("profiles")
-      .select("user_id, username, display_name, avatar_url, certification_type")
+      .select("user_id, username, display_name, avatar_url, certification_type, is_banned")
       .in("user_id", userIds);
 
     const profileMap = new Map((profilesData || []).map((p: any) => [p.user_id, p]));
-    const enriched = (postsData || []).map((post: any) => ({
-      ...post,
-      profiles: profileMap.get(post.user_id) || null,
-    }));
+    const bannedIds = new Set((profilesData || []).filter((p: any) => p.is_banned).map((p: any) => p.user_id));
+    const enriched = (postsData || [])
+      .filter((post: any) => !bannedIds.has(post.user_id))
+      .map((post: any) => ({
+        ...post,
+        profiles: profileMap.get(post.user_id) || null,
+      }));
     setPosts(enriched);
 
     if (user) {

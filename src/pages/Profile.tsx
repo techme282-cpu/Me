@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import BottomNav from "@/components/BottomNav";
 import PostCard from "@/components/PostCard";
-import { Settings, Grid3X3, Bookmark, Lock } from "lucide-react";
+import { Settings, Grid3X3, Bookmark, X } from "lucide-react";
 import { toast } from "sonner";
 import CertificationBadge from "@/components/CertificationBadge";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,8 @@ export default function Profile() {
   const [tab, setTab] = useState<"posts" | "saved">("posts");
   const [editing, setEditing] = useState(false);
   const [bio, setBio] = useState("");
+  const [showFollowersList, setShowFollowersList] = useState<"followers" | "following" | null>(null);
+  const [followersList, setFollowersList] = useState<any[]>([]);
 
   useEffect(() => {
     if (user) fetchProfile();
@@ -29,7 +31,7 @@ export default function Profile() {
     setProfile(p);
     setBio(p?.bio || "");
 
-      const [{ count: fc }, { count: fgc }, { data: postsData }] = await Promise.all([
+    const [{ count: fc }, { count: fgc }, { data: postsData }] = await Promise.all([
       supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id).eq("status", "accepted"),
       supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id).eq("status", "accepted"),
       supabase.from("posts").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -46,7 +48,25 @@ export default function Profile() {
     toast.success("Bio mise à jour !");
   };
 
-  
+  const loadFollowList = async (type: "followers" | "following") => {
+    if (!user) return;
+    setShowFollowersList(type);
+    setFollowersList([]);
+    
+    let userIds: string[] = [];
+    if (type === "followers") {
+      const { data } = await supabase.from("follows").select("follower_id").eq("following_id", user.id).eq("status", "accepted");
+      userIds = (data || []).map(f => f.follower_id);
+    } else {
+      const { data } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).eq("status", "accepted");
+      userIds = (data || []).map(f => f.following_id);
+    }
+    
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from("profiles").select("user_id, username, display_name, avatar_url, certification_type, is_banned").in("user_id", userIds);
+      setFollowersList(profiles || []);
+    }
+  };
 
   if (!profile) return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -62,7 +82,6 @@ export default function Profile() {
       </header>
 
       <main className="max-w-lg mx-auto">
-        {/* Profile info */}
         <div className="px-4 py-6 space-y-4">
           <div className="flex items-center gap-6">
             <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center text-2xl font-bold text-primary-foreground shrink-0">
@@ -74,8 +93,8 @@ export default function Profile() {
             </div>
             <div className="flex gap-6 text-center">
               <div><p className="font-bold text-foreground">{posts.length}</p><p className="text-xs text-muted-foreground">Posts</p></div>
-              <div><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></div>
-              <div><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></div>
+              <button onClick={() => loadFollowList("followers")}><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></button>
+              <button onClick={() => loadFollowList("following")}><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></button>
             </div>
           </div>
 
@@ -95,7 +114,6 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-t border-border">
           <button onClick={() => setTab("posts")} className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm border-b-2 transition-all ${tab === "posts" ? "text-foreground border-primary" : "text-muted-foreground border-transparent"}`}>
             <Grid3X3 size={16} /> Posts
@@ -105,7 +123,6 @@ export default function Profile() {
           </button>
         </div>
 
-        {/* Posts grid */}
         <div className="px-4 py-4 space-y-4">
           {posts.length === 0 ? (
             <p className="text-center text-muted-foreground py-10">Aucune publication</p>
@@ -114,6 +131,42 @@ export default function Profile() {
           )}
         </div>
       </main>
+
+      {/* Followers/Following modal */}
+      {showFollowersList && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={() => setShowFollowersList(null)}>
+          <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h3 className="font-bold text-foreground">{showFollowersList === "followers" ? "Followers" : "Following"}</h3>
+              <button onClick={() => setShowFollowersList(null)} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+            </div>
+            <div className="overflow-y-auto max-h-[60vh] divide-y divide-border/50">
+              {followersList.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-10">Aucun résultat</p>
+              ) : (
+                followersList.map((p) => (
+                  <button
+                    key={p.user_id}
+                    onClick={() => { setShowFollowersList(null); navigate(`/user/${p.user_id}`); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold text-sm overflow-hidden">
+                      {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full rounded-full object-cover" alt="" /> : p.username?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="text-sm font-medium text-foreground flex items-center gap-1">
+                        {p.display_name || p.username}
+                        <CertificationBadge type={p.certification_type} size={12} />
+                      </p>
+                      <p className="text-xs text-muted-foreground">@{p.username}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>
