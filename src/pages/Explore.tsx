@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import BottomNav from "@/components/BottomNav";
-import { Search, TrendingUp } from "lucide-react";
+import { Search, TrendingUp, Ban } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import CertificationBadge from "@/components/CertificationBadge";
 
 export default function Explore() {
   const navigate = useNavigate();
@@ -15,12 +16,20 @@ export default function Explore() {
   }, []);
 
   const fetchTrending = async () => {
+    // Exclude posts from banned users
     const { data } = await supabase
       .from("posts")
       .select("*")
       .order("like_count", { ascending: false })
-      .limit(20);
-    setTrending(data || []);
+      .limit(50);
+    
+    if (!data || data.length === 0) { setTrending([]); return; }
+
+    // Filter out banned users' posts
+    const userIds = [...new Set(data.map(p => p.user_id))];
+    const { data: profiles } = await supabase.from("profiles").select("user_id, is_banned").in("user_id", userIds);
+    const bannedIds = new Set((profiles || []).filter(p => p.is_banned).map(p => p.user_id));
+    setTrending(data.filter(p => !bannedIds.has(p.user_id)).slice(0, 20));
   };
 
   useEffect(() => {
@@ -68,9 +77,21 @@ export default function Explore() {
                   <div className="w-11 h-11 rounded-full gradient-primary flex items-center justify-center text-primary-foreground font-bold">
                     {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full rounded-full object-cover" alt="" /> : p.username[0]?.toUpperCase()}
                   </div>
-                  <div className="text-left">
-                    <p className="font-medium text-sm text-foreground">{p.display_name || p.username}</p>
-                    <p className="text-xs text-muted-foreground">@{p.username}</p>
+                  <div className="text-left flex-1">
+                    {p.is_banned ? (
+                      <div className="flex items-center gap-1.5">
+                        <Ban size={14} className="text-destructive" />
+                        <p className="text-sm text-destructive font-medium">Compte banni par Purge Hub 🚫</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-medium text-sm text-foreground flex items-center gap-1">
+                          {p.display_name || p.username}
+                          <CertificationBadge type={p.certification_type} size={14} />
+                        </p>
+                        <p className="text-xs text-muted-foreground">@{p.username}</p>
+                      </>
+                    )}
                   </div>
                 </button>
               ))
@@ -87,7 +108,7 @@ export default function Explore() {
             ) : (
               <div className="grid grid-cols-3 gap-1 rounded-xl overflow-hidden">
                 {trending.map((post) => (
-                  <div key={post.id} className="aspect-square bg-secondary flex items-center justify-center text-xs text-muted-foreground p-2 text-center">
+                  <div key={post.id} onClick={() => navigate(`/post/${post.id}`)} className="aspect-square bg-secondary flex items-center justify-center text-xs text-muted-foreground p-2 text-center cursor-pointer hover:opacity-80 transition-opacity">
                     {post.media_url ? (
                       <img src={post.media_url} className="w-full h-full object-cover" alt="" />
                     ) : (

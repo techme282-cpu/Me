@@ -13,6 +13,7 @@ export default function Login() {
   const [banInfo, setBanInfo] = useState<{ reason: string; userId: string } | null>(null);
   const [appealSent, setAppealSent] = useState(false);
   const [appealLoading, setAppealLoading] = useState(false);
+  const [appealText, setAppealText] = useState("");
   const { signIn } = useAuth();
   const navigate = useNavigate();
 
@@ -24,7 +25,7 @@ export default function Login() {
     setLoading(false);
     if (error) { toast.error(error.message); return; }
 
-    // Check if user is banned
+    // Check if user is banned (server-side check)
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: profile } = await supabase
@@ -44,7 +45,10 @@ export default function Login() {
   };
 
   const handleAppeal = async () => {
-    if (!banInfo) return;
+    if (!banInfo || !appealText.trim()) {
+      toast.error("Écris ta demande de réexamen");
+      return;
+    }
     setAppealLoading(true);
 
     // Sign back in temporarily to submit appeal
@@ -57,14 +61,19 @@ export default function Login() {
 
     const { error } = await supabase.from("account_reviews").insert({
       user_id: banInfo.userId,
-      reason: banInfo.reason,
+      reason: appealText.trim(),
     });
 
     await supabase.auth.signOut();
     setAppealLoading(false);
 
     if (error) {
-      toast.error("Erreur: " + error.message);
+      if (error.message.includes("duplicate") || error.code === "23505") {
+        toast.info("Demande déjà envoyée");
+        setAppealSent(true);
+      } else {
+        toast.error("Erreur: " + error.message);
+      }
     } else {
       setAppealSent(true);
       toast.success("Demande d'examen envoyée !");
@@ -79,7 +88,7 @@ export default function Login() {
           <div className="w-20 h-20 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
             <AlertTriangle size={40} className="text-destructive" />
           </div>
-          <h1 className="text-2xl font-display font-bold text-destructive">Account Banned</h1>
+          <h1 className="text-2xl font-display font-bold text-destructive">Votre compte a été banni</h1>
           <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
             <p className="text-sm font-medium text-foreground">Raison :</p>
             <p className="text-sm text-muted-foreground">{banInfo.reason}</p>
@@ -92,18 +101,28 @@ export default function Login() {
               </p>
             </div>
           ) : (
-            <button
-              onClick={handleAppeal}
-              disabled={appealLoading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 gradient-primary text-primary-foreground rounded-2xl font-medium text-sm disabled:opacity-50"
-            >
-              <Send size={18} />
-              {appealLoading ? "Envoi..." : "Demander un examen"}
-            </button>
+            <div className="space-y-3">
+              <textarea
+                value={appealText}
+                onChange={(e) => setAppealText(e.target.value)}
+                className="w-full bg-secondary border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                rows={4}
+                placeholder="Explique pourquoi ton compte devrait être restauré..."
+                maxLength={500}
+              />
+              <button
+                onClick={handleAppeal}
+                disabled={appealLoading || !appealText.trim()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3.5 gradient-primary text-primary-foreground rounded-2xl font-medium text-sm disabled:opacity-50"
+              >
+                <Send size={18} />
+                {appealLoading ? "Envoi..." : "Demander un examen"}
+              </button>
+            </div>
           )}
 
           <button
-            onClick={() => { setBanInfo(null); setAppealSent(false); }}
+            onClick={() => { setBanInfo(null); setAppealSent(false); setAppealText(""); }}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             ← Retour à la connexion
