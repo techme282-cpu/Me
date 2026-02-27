@@ -65,14 +65,13 @@ export default function Home() {
     let postsData: any[] = [];
 
     if (tab === "foryou") {
-      // Use the ranking algorithm — exclude videos (those are for Loop)
+      // Dynamic algorithm with randomization built into DB function
       const { data } = await supabase.rpc("get_ranked_posts", {
         requesting_user_id: user?.id || "00000000-0000-0000-0000-000000000000",
         feed_limit: 50,
       });
       postsData = (data || []).filter((p: any) => p.media_type !== "video");
     } else {
-      // Following tab: only posts from people I follow (exclude videos)
       if (!user) { setLoading(false); return; }
       const { data: followData } = await supabase
         .from("follows")
@@ -91,10 +90,9 @@ export default function Home() {
       postsData = data || [];
     }
 
-    
-
-    // Fetch profiles for all posts - filter out banned users
-    const userIds = [...new Set((postsData || []).map((p: any) => p.user_id))];
+    // Fetch profiles - filter banned users
+    const userIds = [...new Set(postsData.map((p: any) => p.user_id))];
+    if (userIds.length === 0) { setPosts([]); setLoading(false); return; }
     const { data: profilesData } = await supabase
       .from("profiles")
       .select("user_id, username, display_name, avatar_url, certification_type, is_banned")
@@ -102,7 +100,7 @@ export default function Home() {
 
     const profileMap = new Map((profilesData || []).map((p: any) => [p.user_id, p]));
     const bannedIds = new Set((profilesData || []).filter((p: any) => p.is_banned).map((p: any) => p.user_id));
-    const enriched = (postsData || [])
+    const enriched = postsData
       .filter((post: any) => !bannedIds.has(post.user_id))
       .map((post: any) => ({
         ...post,
