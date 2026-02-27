@@ -177,6 +177,33 @@ export type Database = {
           },
         ]
       }
+      favorite_stickers: {
+        Row: {
+          created_at: string
+          emoji: string | null
+          id: string
+          sticker_set_name: string | null
+          sticker_url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          sticker_set_name?: string | null
+          sticker_url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string | null
+          id?: string
+          sticker_set_name?: string | null
+          sticker_url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       follows: {
         Row: {
           created_at: string | null
