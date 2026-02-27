@@ -71,9 +71,13 @@ export default function Settings() {
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
-      const path = `avatars/${user.id}.${ext}`;
-      const { error: uploadErr } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+      // Always use same path to avoid orphaned files
+      const path = `avatars/${user.id}`;
+
+      // Delete old file first to avoid conflicts
+      await supabase.storage.from("media").remove([path]);
+
+      const { error: uploadErr } = await supabase.storage.from("media").upload(path, file, { upsert: true, contentType: file.type });
       if (uploadErr) throw uploadErr;
 
       const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
