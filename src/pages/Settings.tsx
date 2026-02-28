@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, LogOut, Shield, Moon, Bell, Lock, ChevronRight, Check, X, BadgeCheck, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, LogOut, Shield, Moon, Bell, Lock, ChevronRight, Check, X, BadgeCheck, Camera, Loader2, Image } from "lucide-react";
 import CertificationBadge from "@/components/CertificationBadge";
 
 export default function Settings() {
@@ -19,6 +19,10 @@ export default function Settings() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
+  const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
+  const [chatWallpaper, setChatWallpaper] = useState<string | null>(null);
+  const [uploadingWallpaper, setUploadingWallpaper] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -40,6 +44,7 @@ export default function Settings() {
       setUsername(data.username || "");
       setBio(data.bio || "");
       setClan(data.clan || "");
+      setChatWallpaper(data.chat_wallpaper || null);
     }
   };
 
@@ -228,7 +233,89 @@ export default function Settings() {
               <span className="flex-1 text-sm font-medium text-foreground">Notifications</span>
               <ChevronRight size={16} className="text-muted-foreground" />
             </button>
+            <button onClick={() => setShowWallpaperPicker(!showWallpaperPicker)} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/50 transition-colors text-left">
+              <Image size={20} className="text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium text-foreground">Fond d'écran des chats</span>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
           </div>
+
+          {showWallpaperPicker && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+              <p className="text-xs text-muted-foreground">Choisir un fond d'écran pour les DMs et groupes</p>
+              <div className="grid grid-cols-4 gap-2">
+                {/* Default */}
+                <button
+                  onClick={async () => {
+                    await supabase.from("profiles").update({ chat_wallpaper: null }).eq("user_id", user!.id);
+                    setChatWallpaper(null);
+                    toast.success("Fond d'écran par défaut");
+                  }}
+                  className={`aspect-square rounded-xl border-2 flex items-center justify-center text-xs text-muted-foreground ${!chatWallpaper ? "border-primary" : "border-border"} bg-background`}
+                >
+                  Défaut
+                </button>
+                {/* Preset colors */}
+                {[
+                  { name: "Sombre", value: "dark", bg: "bg-[hsl(220,20%,10%)]" },
+                  { name: "Bleu", value: "blue", bg: "bg-[hsl(210,60%,20%)]" },
+                  { name: "Vert", value: "green", bg: "bg-[hsl(150,40%,15%)]" },
+                  { name: "Violet", value: "purple", bg: "bg-[hsl(270,40%,18%)]" },
+                  { name: "Rose", value: "pink", bg: "bg-[hsl(340,40%,18%)]" },
+                  { name: "Orange", value: "orange", bg: "bg-[hsl(25,50%,18%)]" },
+                ].map((preset) => (
+                  <button
+                    key={preset.value}
+                    onClick={async () => {
+                      await supabase.from("profiles").update({ chat_wallpaper: preset.value }).eq("user_id", user!.id);
+                      setChatWallpaper(preset.value);
+                      toast.success(`Fond "${preset.name}" appliqué`);
+                    }}
+                    className={`aspect-square rounded-xl border-2 flex items-center justify-center text-[10px] text-white/70 ${chatWallpaper === preset.value ? "border-primary" : "border-border"} ${preset.bg}`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+                {/* Custom upload */}
+                <button
+                  onClick={() => wallpaperInputRef.current?.click()}
+                  disabled={uploadingWallpaper}
+                  className={`aspect-square rounded-xl border-2 border-dashed flex items-center justify-center text-xs text-muted-foreground ${chatWallpaper?.startsWith("http") ? "border-primary" : "border-border"} bg-secondary/50`}
+                >
+                  {uploadingWallpaper ? <Loader2 size={16} className="animate-spin" /> : <><Camera size={14} /><span className="sr-only">Photo</span></>}
+                </button>
+              </div>
+              <input
+                ref={wallpaperInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file || !user) return;
+                  if (file.size > 5 * 1024 * 1024) { toast.error("Image trop lourde (max 5 Mo)"); return; }
+                  setUploadingWallpaper(true);
+                  try {
+                    const path = `wallpapers/${user.id}`;
+                    await supabase.storage.from("media").remove([path]);
+                    const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true, contentType: file.type });
+                    if (error) throw error;
+                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                    const url = urlData.publicUrl + `?t=${Date.now()}`;
+                    await supabase.from("profiles").update({ chat_wallpaper: url }).eq("user_id", user.id);
+                    setChatWallpaper(url);
+                    toast.success("Fond d'écran personnalisé appliqué !");
+                  } catch (err: any) { toast.error("Erreur: " + err.message); }
+                  setUploadingWallpaper(false);
+                }}
+              />
+              {chatWallpaper?.startsWith("http") && (
+                <div className="rounded-xl overflow-hidden h-20">
+                  <img src={chatWallpaper} className="w-full h-full object-cover" alt="wallpaper preview" />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Security */}
