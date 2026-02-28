@@ -10,6 +10,21 @@ import StickerPicker from "@/components/StickerPicker";
 import MessageContent from "@/components/MessageContent";
 import CertificationBadge from "@/components/CertificationBadge";
 
+const WALLPAPER_PRESETS: Record<string, string> = {
+  dark: "hsl(220,20%,10%)",
+  blue: "hsl(210,60%,20%)",
+  green: "hsl(150,40%,15%)",
+  purple: "hsl(270,40%,18%)",
+  pink: "hsl(340,40%,18%)",
+  orange: "hsl(25,50%,18%)",
+};
+
+function getWallpaperStyle(wp: string): React.CSSProperties {
+  if (wp.startsWith("http")) return { backgroundImage: `url(${wp})`, backgroundSize: "cover", backgroundPosition: "center" };
+  if (WALLPAPER_PRESETS[wp]) return { backgroundColor: WALLPAPER_PRESETS[wp] };
+  return {};
+}
+
 export default function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
   const { user } = useAuth();
@@ -24,6 +39,7 @@ export default function GroupChat() {
   const [selectedMsg, setSelectedMsg] = useState<string | null>(null);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
+  const [chatWallpaper, setChatWallpaper] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,6 +49,7 @@ export default function GroupChat() {
       fetchGroup();
       fetchMessages();
       fetchMembers();
+      supabase.from("profiles").select("chat_wallpaper").eq("user_id", user.id).single().then(({ data }) => setChatWallpaper(data?.chat_wallpaper || null));
     }
   }, [groupId, user]);
 
@@ -233,7 +250,7 @@ export default function GroupChat() {
       </header>
 
       {/* Messages */}
-      <main className="flex-1 overflow-y-auto px-3 py-3 max-w-lg mx-auto w-full space-y-1 chat-wallpaper">
+      <main className={`flex-1 overflow-y-auto px-3 py-3 max-w-lg mx-auto w-full space-y-1 ${!chatWallpaper ? "chat-wallpaper" : ""}`} style={chatWallpaper ? getWallpaperStyle(chatWallpaper) : undefined}>
         {messages.map((msg) => {
           if (isSystemMessage(msg)) {
             return (
