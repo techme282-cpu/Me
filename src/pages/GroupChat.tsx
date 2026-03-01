@@ -45,7 +45,7 @@ export default function GroupChat() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [isRecording, setIsRecording] = useState(false);
-  const [viewOnceMode, setViewOnceMode] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<{ file: File; url: string; isVideo: boolean } | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -411,21 +411,68 @@ export default function GroupChat() {
       )}
 
       {/* Input */}
-      <input type="file" ref={fileInputRef} accept="image/*,video/*" className="hidden" onChange={async (e) => {
+      <input type="file" ref={fileInputRef} accept="image/*,video/*" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (!file || !user || !groupId) return;
         const isVideo = file.type.startsWith("video/");
-        const ext = file.name.split(".").pop();
-        const path = `chat/${groupId}/${Date.now()}.${ext}`;
-        const { error } = await supabase.storage.from("media").upload(path, file);
-        if (error) { toast.error("Erreur upload"); return; }
-        const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
-        const tag = isVideo ? "VIDEO" : "IMAGE";
-        const insertData: any = { sender_id: user.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: viewOnceMode };
-        await supabase.from("messages").insert(insertData);
-        setViewOnceMode(false);
+        const url = URL.createObjectURL(file);
+        setPendingMedia({ file, url, isVideo });
         e.target.value = "";
       }} />
+
+      {/* Media preview with view-once option */}
+      {pendingMedia && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
+          <div className="max-w-sm w-full bg-card rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-3 max-h-[60vh] overflow-hidden flex items-center justify-center bg-black">
+              {pendingMedia.isVideo ? (
+                <video src={pendingMedia.url} className="max-h-[55vh] rounded-lg" controls />
+              ) : (
+                <img src={pendingMedia.url} className="max-h-[55vh] object-contain rounded-lg" alt="Aperçu" />
+              )}
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    const ext = pendingMedia.file.name.split(".").pop();
+                    const path = `chat/${groupId}/${Date.now()}.${ext}`;
+                    const { error } = await supabase.storage.from("media").upload(path, pendingMedia.file);
+                    if (error) { toast.error("Erreur upload"); return; }
+                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                    const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
+                    await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: false });
+                    URL.revokeObjectURL(pendingMedia.url);
+                    setPendingMedia(null);
+                  }}
+                  className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-full text-sm font-medium"
+                >
+                  <Send size={14} className="inline mr-1.5" /> Envoyer
+                </button>
+                <button
+                  onClick={async () => {
+                    const ext = pendingMedia.file.name.split(".").pop();
+                    const path = `chat/${groupId}/${Date.now()}.${ext}`;
+                    const { error } = await supabase.storage.from("media").upload(path, pendingMedia.file);
+                    if (error) { toast.error("Erreur upload"); return; }
+                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                    const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
+                    await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: true });
+                    URL.revokeObjectURL(pendingMedia.url);
+                    setPendingMedia(null);
+                  }}
+                  className="flex-1 bg-secondary text-foreground py-2.5 rounded-full text-sm font-medium border border-border flex items-center justify-center gap-1.5"
+                >
+                  <Eye size={14} /> Vue unique
+                </button>
+              </div>
+              <button onClick={() => { URL.revokeObjectURL(pendingMedia.url); setPendingMedia(null); }} className="text-muted-foreground text-sm py-1">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isMember ? (
         canSend ? (
           <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
@@ -464,20 +511,13 @@ export default function GroupChat() {
               >
                 {isRecording ? <Square size={20} /> : <Mic size={20} />}
               </button>
-              <button
-                onClick={() => setViewOnceMode(!viewOnceMode)}
-                className={`p-1 ${viewOnceMode ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                title="Vue unique"
-              >
-                <Eye size={18} />
-              </button>
               <input
                 ref={inputRef}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={(e) => { if (e.key === "Enter") { setShowMentions(false); sendMessage(); } }}
                 className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder={editMsg ? "Modifier le message..." : viewOnceMode ? "Message vue unique..." : "Écrire un message..."}
+                placeholder={editMsg ? "Modifier le message..." : "Écrire un message..."}
               />
               <button onClick={() => { setShowMentions(false); sendMessage(); }} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
                 <Send size={18} />
