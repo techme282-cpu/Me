@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Eye, Pencil, X, AtSign } from "lucide-react";
+import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Eye, Pencil, X, AtSign, Image, Mic, Video, Square } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -44,14 +44,27 @@ export default function GroupChat() {
   const isInitialLoad = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+  const [viewOnceMode, setViewOnceMode] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (groupId && user) {
       fetchGroup();
       fetchMessages();
       fetchMembers();
       supabase.from("profiles").select("chat_wallpaper").eq("user_id", user.id).single().then(({ data }) => setChatWallpaper(data?.chat_wallpaper || null));
+      // Mark group as read
+      markGroupRead();
     }
   }, [groupId, user]);
+
+  const markGroupRead = useCallback(async () => {
+    if (!user || !groupId) return;
+    await supabase.from("group_reads").upsert({ group_id: groupId, user_id: user.id, last_read_at: new Date().toISOString() }, { onConflict: "group_id,user_id" });
+  }, [user, groupId]);
 
   const fetchGroup = async () => {
     const { data } = await supabase.from("groups").select("*").eq("id", groupId!).single();
@@ -99,13 +112,15 @@ export default function GroupChat() {
           if ((payload.new as any).sender_id === user?.id) {
             setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
           }
+          // Mark as read when new messages arrive and user is viewing
+          markGroupRead();
         } else if (payload.eventType === "UPDATE") {
           setMessages((prev) => prev.map((m) => (m.id === (payload.new as any).id ? (payload.new as any) : m)));
         }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [groupId, user?.id]);
+  }, [groupId, user?.id, markGroupRead]);
 
   // Handle @ mention detection
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -395,19 +410,74 @@ export default function GroupChat() {
         </div>
       )}
 
-      {/* Input - removed Eye button */}
+      {/* Input */}
+      <input type="file" ref={fileInputRef} accept="image/*,video/*" className="hidden" onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !user || !groupId) return;
+        const isVideo = file.type.startsWith("video/");
+        const ext = file.name.split(".").pop();
+        const path = `chat/${groupId}/${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from("media").upload(path, file);
+        if (error) { toast.error("Erreur upload"); return; }
+        const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+        const tag = isVideo ? "VIDEO" : "IMAGE";
+        const insertData: any = { sender_id: user.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: viewOnceMode };
+        await supabase.from("messages").insert(insertData);
+        setViewOnceMode(false);
+        e.target.value = "";
+      }} />
       {isMember ? (
         canSend ? (
           <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
             <div className="flex gap-2 max-w-lg mx-auto items-center">
               <StickerPicker onSendSticker={sendSticker} />
+              <button onClick={() => fileInputRef.current?.click()} className="text-muted-foreground hover:text-foreground p-1">
+                <Image size={20} />
+              </button>
+              <button
+                onClick={async () => {
+                  if (isRecording) {
+                    mediaRecorderRef.current?.stop();
+                    setIsRecording(false);
+                  } else {
+                    try {
+                      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                      const recorder = new MediaRecorder(stream);
+                      audioChunksRef.current = [];
+                      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+                      recorder.onstop = async () => {
+                        stream.getTracks().forEach((t) => t.stop());
+                        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+                        const path = `chat/${groupId}/${Date.now()}.webm`;
+                        const { error } = await supabase.storage.from("media").upload(path, blob);
+                        if (error) { toast.error("Erreur upload vocal"); return; }
+                        const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                        await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[VOICE:${urlData.publicUrl}]` });
+                      };
+                      mediaRecorderRef.current = recorder;
+                      recorder.start();
+                      setIsRecording(true);
+                    } catch { toast.error("Micro non disponible"); }
+                  }
+                }}
+                className={`p-1 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {isRecording ? <Square size={20} /> : <Mic size={20} />}
+              </button>
+              <button
+                onClick={() => setViewOnceMode(!viewOnceMode)}
+                className={`p-1 ${viewOnceMode ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                title="Vue unique"
+              >
+                <Eye size={18} />
+              </button>
               <input
                 ref={inputRef}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={(e) => { if (e.key === "Enter") { setShowMentions(false); sendMessage(); } }}
                 className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder={editMsg ? "Modifier le message..." : "Écrire un message..."}
+                placeholder={editMsg ? "Modifier le message..." : viewOnceMode ? "Message vue unique..." : "Écrire un message..."}
               />
               <button onClick={() => { setShowMentions(false); sendMessage(); }} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
                 <Send size={18} />

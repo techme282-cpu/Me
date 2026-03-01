@@ -63,6 +63,11 @@ export default function Chat() {
     const groupIds = memberships.map((m) => m.group_id);
     const { data: groupsData } = await supabase.from("groups").select("*").in("id", groupIds).eq("status", "active").order("created_at", { ascending: false });
 
+    // Fetch group_reads for all groups
+    const { data: reads } = await supabase.from("group_reads").select("group_id, last_read_at").eq("user_id", user.id).in("group_id", groupIds);
+    const readsMap: Record<string, string> = {};
+    (reads || []).forEach((r: any) => { readsMap[r.group_id] = r.last_read_at; });
+
     const enriched = await Promise.all(
       (groupsData || []).map(async (g) => {
         const { data: lastMsg } = await supabase
@@ -74,6 +79,42 @@ export default function Chat() {
           .limit(1);
         const { count } = await supabase.from("group_members").select("*", { count: "exact", head: true }).eq("group_id", g.id);
         
+        // Count unread messages
+        const lastRead = readsMap[g.id];
+        let unreadCount = 0;
+        if (lastRead) {
+          const { count: uc } = await supabase
+            .from("messages")
+            .select("*", { count: "exact", head: true })
+            .eq("group_id", g.id)
+            .is("deleted_at", null)
+            .gt("created_at", lastRead)
+            .neq("sender_id", user.id);
+          unreadCount = uc || 0;
+        } else {
+          // Never read - count all messages not from self
+          const { count: uc } = await supabase
+            .from("messages")
+            .select("*", { count: "exact", head: true })
+            .eq("group_id", g.id)
+            .is("deleted_at", null)
+            .neq("sender_id", user.id);
+          unreadCount = uc || 0;
+        }
+
+        // Check for @mentions in unread messages
+        let hasMention = false;
+        if (unreadCount > 0) {
+          const myProfile = await supabase.from("profiles").select("username").eq("user_id", user.id).maybeSingle();
+          if (myProfile.data?.username) {
+            const mentionQuery = lastRead
+              ? supabase.from("messages").select("id", { count: "exact", head: true }).eq("group_id", g.id).is("deleted_at", null).gt("created_at", lastRead).neq("sender_id", user.id).ilike("content", `%@${myProfile.data.username}%`)
+              : supabase.from("messages").select("id", { count: "exact", head: true }).eq("group_id", g.id).is("deleted_at", null).neq("sender_id", user.id).ilike("content", `%@${myProfile.data.username}%`);
+            const { count: mc } = await mentionQuery;
+            hasMention = (mc || 0) > 0;
+          }
+        }
+
         // Get last message sender profile
         let lastSenderName: string | null = null;
         if (lastMsg?.[0]?.sender_id) {
@@ -81,7 +122,7 @@ export default function Chat() {
           lastSenderName = senderProf?.display_name || senderProf?.username || null;
         }
         
-        return { ...g, lastMessage: lastMsg?.[0] || null, memberCount: count || 0, lastSenderName };
+        return { ...g, lastMessage: lastMsg?.[0] || null, memberCount: count || 0, lastSenderName, unreadCount, hasMention };
       })
     );
     setGroups(enriched);
@@ -186,7 +227,11 @@ export default function Chat() {
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground truncate">
-                        {conv.content?.startsWith("[STICKER:") ? "🎭 Sticker" : conv.content}
+                        {conv.content?.startsWith("[STICKER:") ? "🎭 Sticker" :
+                         conv.content?.startsWith("[IMAGE:") ? "📷 Photo" :
+                         conv.content?.startsWith("[VIDEO:") ? "🎥 Vidéo" :
+                         conv.content?.startsWith("[VOICE:") ? "🎤 Vocal" :
+                         conv.content}
                       </p>
                     </div>
                     {conv.unreadCount > 0 && (
@@ -236,13 +281,27 @@ export default function Chat() {
                       {g.lastMessage ? (
                         <>
                           {g.lastSenderName && <span className="font-medium text-foreground/70">{g.lastSenderName}: </span>}
-                          {g.lastMessage.content?.startsWith("[STICKER:") ? "🎭 Sticker" : g.lastMessage.content}
+                          {g.lastMessage.content?.startsWith("[STICKER:") ? "🎭 Sticker" :
+                           g.lastMessage.content?.startsWith("[IMAGE:") ? "📷 Photo" :
+                           g.lastMessage.content?.startsWith("[VIDEO:") ? "🎥 Vidéo" :
+                           g.lastMessage.content?.startsWith("[VOICE:") ? "🎤 Vocal" :
+                           g.lastMessage.content}
                         </>
                       ) : (
                         `${g.memberCount} membre${g.memberCount > 1 ? "s" : ""}`
                       )}
                     </p>
                   </div>
+                  {g.unreadCount > 0 && (
+                    <div className="flex flex-col items-center gap-0.5 shrink-0">
+                      <span className="min-w-[20px] h-[20px] flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold px-1">
+                        {g.unreadCount > 99 ? "99+" : g.unreadCount}
+                      </span>
+                      {g.hasMention && (
+                        <span className="text-[9px] text-primary font-bold">@</span>
+                      )}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>

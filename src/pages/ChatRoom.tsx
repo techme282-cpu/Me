@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, Reply, Trash2, Eye, Pencil, X } from "lucide-react";
+import { ArrowLeft, Send, Reply, Trash2, Eye, Pencil, X, Image, Mic, Square } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -36,6 +36,11 @@ export default function ChatRoom() {
   const [editMsg, setEditMsg] = useState<any>(null);
   const [selectedMsg, setSelectedMsg] = useState<string | null>(null);
   const [chatWallpaper, setChatWallpaper] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [viewOnceMode, setViewOnceMode] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,7 +105,8 @@ export default function ChatRoom() {
     if (!content) setInput("");
     const insertData: any = { sender_id: user.id, receiver_id: partnerId, content: text };
     if (!content && replyTo) insertData.reply_to = replyTo.id;
-    if (!content) setReplyTo(null);
+    if (viewOnceMode && !content) insertData.is_view_once = true;
+    if (!content) { setReplyTo(null); setViewOnceMode(false); }
     await supabase.from("messages").insert(insertData);
   };
 
@@ -265,16 +271,70 @@ export default function ChatRoom() {
         </div>
       )}
 
-      {/* Input - removed Eye button */}
+      {/* Input */}
+      <input type="file" ref={fileInputRef} accept="image/*,video/*" className="hidden" onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !user || !partnerId) return;
+        const isVideo = file.type.startsWith("video/");
+        const ext = file.name.split(".").pop();
+        const path = `chat/${partnerId}/${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from("media").upload(path, file);
+        if (error) { toast.error("Erreur upload"); return; }
+        const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+        const tag = isVideo ? "VIDEO" : "IMAGE";
+        await supabase.from("messages").insert({ sender_id: user.id, receiver_id: partnerId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: viewOnceMode });
+        setViewOnceMode(false);
+        e.target.value = "";
+      }} />
       <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
         <div className="flex gap-2 max-w-lg mx-auto items-center">
           <StickerPicker onSendSticker={sendSticker} />
+          <button onClick={() => fileInputRef.current?.click()} className="text-muted-foreground hover:text-foreground p-1">
+            <Image size={20} />
+          </button>
+          <button
+            onClick={async () => {
+              if (isRecording) {
+                mediaRecorderRef.current?.stop();
+                setIsRecording(false);
+              } else {
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  const recorder = new MediaRecorder(stream);
+                  audioChunksRef.current = [];
+                  recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+                  recorder.onstop = async () => {
+                    stream.getTracks().forEach((t) => t.stop());
+                    const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+                    const path = `chat/${partnerId}/${Date.now()}.webm`;
+                    const { error } = await supabase.storage.from("media").upload(path, blob);
+                    if (error) { toast.error("Erreur upload vocal"); return; }
+                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                    await supabase.from("messages").insert({ sender_id: user!.id, receiver_id: partnerId, content: `[VOICE:${urlData.publicUrl}]` });
+                  };
+                  mediaRecorderRef.current = recorder;
+                  recorder.start();
+                  setIsRecording(true);
+                } catch { toast.error("Micro non disponible"); }
+              }
+            }}
+            className={`p-1 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {isRecording ? <Square size={20} /> : <Mic size={20} />}
+          </button>
+          <button
+            onClick={() => setViewOnceMode(!viewOnceMode)}
+            className={`p-1 ${viewOnceMode ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+            title="Vue unique"
+          >
+            <Eye size={18} />
+          </button>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
             className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-            placeholder={editMsg ? "Modifier le message..." : "Écrire un message..."}
+            placeholder={editMsg ? "Modifier le message..." : viewOnceMode ? "Message vue unique..." : "Écrire un message..."}
           />
           <button onClick={() => sendMessage()} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
             <Send size={18} />
