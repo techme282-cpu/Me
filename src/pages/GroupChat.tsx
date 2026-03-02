@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Eye, Pencil, X, AtSign, Image, Mic, Video, Square } from "lucide-react";
+import { ArrowLeft, Send, MoreVertical, Reply, Trash2, Pencil, X, AtSign, Image, Mic, Video, Square } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -280,9 +280,6 @@ export default function GroupChat() {
           const senderMembership = members.find((m) => m.user_id === msg.sender_id);
           const replied = msg.reply_to ? messages.find((m) => m.id === msg.reply_to) : null;
           const stickerMsg = isSticker(msg.content);
-          const isViewOnce = msg.is_view_once;
-          const viewOnceHidden = isViewOnce && !mine && msg.is_viewed;
-
           return (
             <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               {/* Avatar for others */}
@@ -322,10 +319,6 @@ export default function GroupChat() {
                       {format(new Date(msg.created_at), "HH:mm")}
                     </p>
                   </div>
-                ) : viewOnceHidden ? (
-                  <div className={`px-4 py-2.5 rounded-2xl text-sm bg-muted/50 text-muted-foreground italic ${mine ? "rounded-br-sm" : "rounded-bl-sm"}`}>
-                    <Eye size={14} className="inline mr-1" /> Message éphémère ouvert
-                  </div>
                 ) : (
                   <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-[hsl(195,100%,35%)] text-white rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
                     {!mine && (
@@ -336,7 +329,6 @@ export default function GroupChat() {
                         {senderMembership?.role === "admin" && <span className="text-[10px] opacity-70">Admin</span>}
                       </p>
                     )}
-                    {isViewOnce && <Eye size={12} className="inline mr-1 opacity-60" />}
                     {renderContent(msg, mine)}
                     <div className={`flex items-center gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
                       <span className={`text-[10px] ${mine ? "text-white/50" : "text-muted-foreground"}`}>
@@ -432,40 +424,22 @@ export default function GroupChat() {
               )}
             </div>
             <div className="p-4 flex flex-col gap-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    const ext = pendingMedia.file.name.split(".").pop();
-                    const path = `chat/${groupId}/${Date.now()}.${ext}`;
-                    const { error } = await supabase.storage.from("media").upload(path, pendingMedia.file);
-                    if (error) { toast.error("Erreur upload"); return; }
-                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
-                    const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
-                    await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: false });
-                    URL.revokeObjectURL(pendingMedia.url);
-                    setPendingMedia(null);
-                  }}
-                  className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-full text-sm font-medium"
-                >
-                  <Send size={14} className="inline mr-1.5" /> Envoyer
-                </button>
-                <button
-                  onClick={async () => {
-                    const ext = pendingMedia.file.name.split(".").pop();
-                    const path = `chat/${groupId}/${Date.now()}.${ext}`;
-                    const { error } = await supabase.storage.from("media").upload(path, pendingMedia.file);
-                    if (error) { toast.error("Erreur upload"); return; }
-                    const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
-                    const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
-                    await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: true });
-                    URL.revokeObjectURL(pendingMedia.url);
-                    setPendingMedia(null);
-                  }}
-                  className="flex-1 bg-secondary text-foreground py-2.5 rounded-full text-sm font-medium border border-border flex items-center justify-center gap-1.5"
-                >
-                  <Eye size={14} /> Vue unique
-                </button>
-              </div>
+              <button
+                onClick={async () => {
+                  const ext = pendingMedia.file.name.split(".").pop();
+                  const path = `chat/${groupId}/${Date.now()}.${ext}`;
+                  const { error } = await supabase.storage.from("media").upload(path, pendingMedia.file);
+                  if (error) { toast.error("Erreur upload"); return; }
+                  const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+                  const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
+                  await supabase.from("messages").insert({ sender_id: user!.id, group_id: groupId, content: `[${tag}:${urlData.publicUrl}]` });
+                  URL.revokeObjectURL(pendingMedia.url);
+                  setPendingMedia(null);
+                }}
+                className="w-full bg-primary text-primary-foreground py-2.5 rounded-full text-sm font-medium"
+              >
+                <Send size={14} className="inline mr-1.5" /> Envoyer
+              </button>
               <button onClick={() => { URL.revokeObjectURL(pendingMedia.url); setPendingMedia(null); }} className="text-muted-foreground text-sm py-1">
                 Annuler
               </button>
