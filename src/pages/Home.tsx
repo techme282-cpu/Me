@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import PostCard from "@/components/PostCard";
 import BottomNav from "@/components/BottomNav";
 import StoriesBar from "@/components/StoriesBar";
+import PullToRefresh from "@/components/PullToRefresh";
 import { Bell, Flame } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { requestNotificationPermission, showBrowserNotification } from "@/lib/pushNotifications";
@@ -14,58 +15,18 @@ export default function Home() {
   const [posts, setPosts] = useState<any[]>([]);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"foryou" | "following">("foryou");
   const [unreadCount, setUnreadCount] = useState(0);
+  const hasFetched = useRef(false);
 
-  // Request notification permission on mount
-  useEffect(() => {
-    requestNotificationPermission();
-  }, []);
-
-  // Fetch unread notification count + listen for new notifications with browser push
-  useEffect(() => {
-    if (!user) return;
-    const fetchCount = async () => {
-      const { count } = await supabase
-        .from("notifications")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("is_read", false);
-      setUnreadCount(count || 0);
-    };
-    fetchCount();
-
-    const channel = supabase
-      .channel("notif-count")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
-        fetchCount();
-        // Show browser notification
-        const notif = payload.new as any;
-        if (notif && document.hidden) {
-          showBrowserNotification(notif.title, {
-            body: notif.body || "",
-            tag: notif.id,
-          });
-        }
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user]);
-
-  useEffect(() => {
-    fetchPosts();
-  }, [tab, user]);
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
+    hasFetched.current = true;
 
     let postsData: any[] = [];
 
     if (tab === "foryou") {
-      // Dynamic algorithm with randomization built into DB function
       const { data } = await supabase.rpc("get_ranked_posts", {
         requesting_user_id: user?.id || "00000000-0000-0000-0000-000000000000",
         feed_limit: 50,
@@ -90,7 +51,6 @@ export default function Home() {
       postsData = data || [];
     }
 
-    // Fetch profiles - filter banned users
     const userIds = [...new Set(postsData.map((p: any) => p.user_id))];
     if (userIds.length === 0) { setPosts([]); setLoading(false); return; }
     const { data: profilesData } = await supabase
@@ -102,10 +62,7 @@ export default function Home() {
     const bannedIds = new Set((profilesData || []).filter((p: any) => p.is_banned).map((p: any) => p.user_id));
     const enriched = postsData
       .filter((post: any) => !bannedIds.has(post.user_id))
-      .map((post: any) => ({
-        ...post,
-        profiles: profileMap.get(post.user_id) || null,
-      }));
+      .map((post: any) => ({ ...post, profiles: profileMap.get(post.user_id) || null }));
     setPosts(enriched);
 
     if (user) {
@@ -117,7 +74,57 @@ export default function Home() {
       setSavedIds(new Set((favs.data || []).map((f) => f.post_id)));
     }
     setLoading(false);
-  };
+  }, [tab, user]);
+
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  // Listen for nav-refresh (tap home icon while on home)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.path === "/") {
+        hasFetched.current = false;
+        fetchPosts();
+      }
+    };
+    window.addEventListener("nav-refresh", handler);
+    return () => window.removeEventListener("nav-refresh", handler);
+  }, [fetchPosts]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCount = async () => {
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+      setUnreadCount(count || 0);
+    };
+    fetchCount();
+
+    const channel = supabase
+      .channel("notif-count")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => {
+        fetchCount();
+        const notif = payload.new as any;
+        if (notif && document.hidden) {
+          showBrowserNotification(notif.title, { body: notif.body || "", tag: notif.id });
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchCount())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  useEffect(() => {
+    if (!hasFetched.current || posts.length === 0) {
+      fetchPosts();
+    }
+  }, [tab]);
 
   return (
     <div className="min-h-screen pb-20">
@@ -143,7 +150,7 @@ export default function Home() {
           {(["foryou", "following"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => { setTab(t); hasFetched.current = false; }}
               className={`flex-1 py-2.5 text-sm font-medium transition-all border-b-2 ${
                 tab === t ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"
               }`}
@@ -159,36 +166,38 @@ export default function Home() {
         <StoriesBar />
       </div>
 
-      {/* Feed */}
-      <main className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-card rounded-2xl border border-border h-80 animate-pulse" />
-            ))}
-          </div>
-        ) : posts.length === 0 ? (
-          <div className="text-center py-20 space-y-4">
-            <Flame size={48} className="mx-auto text-muted-foreground" />
-            <p className="text-muted-foreground">Aucune publication pour le moment</p>
-            <button
-              onClick={() => navigate("/create")}
-              className="gradient-primary text-primary-foreground px-6 py-2 rounded-full font-medium text-sm"
-            >
-              Créer la première
-            </button>
-          </div>
-        ) : (
-          posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              isLiked={likedIds.has(post.id)}
-              isSaved={savedIds.has(post.id)}
-            />
-          ))
-        )}
-      </main>
+      {/* Feed with pull-to-refresh */}
+      <PullToRefresh onRefresh={fetchPosts} className="max-w-lg mx-auto">
+        <main className="px-4 py-4 space-y-4">
+          {loading && posts.length === 0 ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-card rounded-2xl border border-border h-80 animate-pulse" />
+              ))}
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="text-center py-20 space-y-4">
+              <Flame size={48} className="mx-auto text-muted-foreground" />
+              <p className="text-muted-foreground">Aucune publication pour le moment</p>
+              <button
+                onClick={() => navigate("/create")}
+                className="gradient-primary text-primary-foreground px-6 py-2 rounded-full font-medium text-sm"
+              >
+                Créer la première
+              </button>
+            </div>
+          ) : (
+            posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                isLiked={likedIds.has(post.id)}
+                isSaved={savedIds.has(post.id)}
+              />
+            ))
+          )}
+        </main>
+      </PullToRefresh>
 
       <BottomNav />
     </div>

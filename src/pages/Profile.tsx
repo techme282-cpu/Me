@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import BottomNav from "@/components/BottomNav";
 import PostCard from "@/components/PostCard";
+import PullToRefresh from "@/components/PullToRefresh";
 import { Settings, Grid3X3, Bookmark, X } from "lucide-react";
 import { toast } from "sonner";
 import CertificationBadge from "@/components/CertificationBadge";
@@ -20,13 +21,15 @@ export default function Profile() {
   const [bio, setBio] = useState("");
   const [showFollowersList, setShowFollowersList] = useState<"followers" | "following" | null>(null);
   const [followersList, setFollowersList] = useState<any[]>([]);
+  const hasFetched = useRef(false);
 
   useEffect(() => {
-    if (user) fetchProfile();
+    if (user && !hasFetched.current) fetchProfile();
   }, [user]);
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     if (!user) return;
+    hasFetched.current = true;
     const { data: p } = await supabase.from("profiles").select("*").eq("user_id", user.id).single();
     setProfile(p);
     setBio(p?.bio || "");
@@ -39,7 +42,7 @@ export default function Profile() {
     setFollowers(fc || 0);
     setFollowing(fgc || 0);
     setPosts(postsData || []);
-  };
+  }, [user]);
 
   const saveBio = async () => {
     if (!user) return;
@@ -81,56 +84,58 @@ export default function Profile() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto">
-        <div className="px-4 py-6 space-y-4">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center text-2xl font-bold text-primary-foreground shrink-0">
-              {profile.avatar_url ? (
-                <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="" />
+      <PullToRefresh onRefresh={fetchProfile} className="max-w-lg mx-auto">
+        <main>
+          <div className="px-4 py-6 space-y-4">
+            <div className="flex items-center gap-6">
+              <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center text-2xl font-bold text-primary-foreground shrink-0">
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="" />
+                ) : (
+                  profile.username[0]?.toUpperCase()
+                )}
+              </div>
+              <div className="flex gap-6 text-center">
+                <div><p className="font-bold text-foreground">{posts.length}</p><p className="text-xs text-muted-foreground">Posts</p></div>
+                <button onClick={() => loadFollowList("followers")}><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></button>
+                <button onClick={() => loadFollowList("following")}><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></button>
+              </div>
+            </div>
+
+            <div>
+              <p className="font-semibold text-foreground flex items-center gap-1">{profile.display_name} <CertificationBadge type={profile.certification_type} size={16} /></p>
+              {profile.clan && <p className="text-xs text-primary font-medium">Clan: {profile.clan}</p>}
+              {editing ? (
+                <div className="mt-2 flex gap-2">
+                  <input value={bio} onChange={(e) => setBio(e.target.value)} className="flex-1 bg-secondary border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" placeholder="Ta bio..." maxLength={150} />
+                  <button onClick={saveBio} className="text-primary text-sm font-medium">OK</button>
+                </div>
               ) : (
-                profile.username[0]?.toUpperCase()
+                <p className="text-sm text-muted-foreground mt-1 cursor-pointer" onClick={() => setEditing(true)}>
+                  {profile.bio || "Ajouter une bio..."}
+                </p>
               )}
             </div>
-            <div className="flex gap-6 text-center">
-              <div><p className="font-bold text-foreground">{posts.length}</p><p className="text-xs text-muted-foreground">Posts</p></div>
-              <button onClick={() => loadFollowList("followers")}><p className="font-bold text-foreground">{followers}</p><p className="text-xs text-muted-foreground">Followers</p></button>
-              <button onClick={() => loadFollowList("following")}><p className="font-bold text-foreground">{following}</p><p className="text-xs text-muted-foreground">Following</p></button>
-            </div>
           </div>
 
-          <div>
-            <p className="font-semibold text-foreground flex items-center gap-1">{profile.display_name} <CertificationBadge type={profile.certification_type} size={16} /></p>
-            {profile.clan && <p className="text-xs text-primary font-medium">Clan: {profile.clan}</p>}
-            {editing ? (
-              <div className="mt-2 flex gap-2">
-                <input value={bio} onChange={(e) => setBio(e.target.value)} className="flex-1 bg-secondary border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" placeholder="Ta bio..." maxLength={150} />
-                <button onClick={saveBio} className="text-primary text-sm font-medium">OK</button>
-              </div>
+          <div className="flex border-t border-border">
+            <button onClick={() => setTab("posts")} className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm border-b-2 transition-all ${tab === "posts" ? "text-foreground border-primary" : "text-muted-foreground border-transparent"}`}>
+              <Grid3X3 size={16} /> Posts
+            </button>
+            <button onClick={() => setTab("saved")} className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm border-b-2 transition-all ${tab === "saved" ? "text-foreground border-primary" : "text-muted-foreground border-transparent"}`}>
+              <Bookmark size={16} /> Favoris
+            </button>
+          </div>
+
+          <div className="px-4 py-4 space-y-4">
+            {posts.length === 0 ? (
+              <p className="text-center text-muted-foreground py-10">Aucune publication</p>
             ) : (
-              <p className="text-sm text-muted-foreground mt-1 cursor-pointer" onClick={() => setEditing(true)}>
-                {profile.bio || "Ajouter une bio..."}
-              </p>
+              posts.map((post) => <PostCard key={post.id} post={post} />)
             )}
           </div>
-        </div>
-
-        <div className="flex border-t border-border">
-          <button onClick={() => setTab("posts")} className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm border-b-2 transition-all ${tab === "posts" ? "text-foreground border-primary" : "text-muted-foreground border-transparent"}`}>
-            <Grid3X3 size={16} /> Posts
-          </button>
-          <button onClick={() => setTab("saved")} className={`flex-1 py-3 flex items-center justify-center gap-1.5 text-sm border-b-2 transition-all ${tab === "saved" ? "text-foreground border-primary" : "text-muted-foreground border-transparent"}`}>
-            <Bookmark size={16} /> Favoris
-          </button>
-        </div>
-
-        <div className="px-4 py-4 space-y-4">
-          {posts.length === 0 ? (
-            <p className="text-center text-muted-foreground py-10">Aucune publication</p>
-          ) : (
-            posts.map((post) => <PostCard key={post.id} post={post} />)
-          )}
-        </div>
-      </main>
+        </main>
+      </PullToRefresh>
 
       {/* Followers/Following modal */}
       {showFollowersList && (

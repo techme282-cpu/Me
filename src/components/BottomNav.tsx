@@ -23,7 +23,6 @@ export default function BottomNav() {
     if (!user) return;
 
     const fetchUnread = async () => {
-      // Count unread DMs
       const { count: dmCount } = await supabase
         .from("messages")
         .select("*", { count: "exact", head: true })
@@ -52,9 +51,20 @@ export default function BottomNav() {
       supabase.from("profiles").update({ last_seen: new Date().toISOString() }).eq("user_id", user.id).then(() => {});
     };
     update();
-    const interval = setInterval(update, 60000); // every minute
+    const interval = setInterval(update, 60000);
     return () => clearInterval(interval);
   }, [user]);
+
+  const handleNavClick = (path: string) => {
+    if (location.pathname === path) {
+      // Already on this page — force refresh by reloading
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Dispatch a custom event so pages can listen and refresh
+      window.dispatchEvent(new CustomEvent("nav-refresh", { detail: { path } }));
+    } else {
+      navigate(path);
+    }
+  };
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border">
@@ -65,7 +75,7 @@ export default function BottomNav() {
           return (
             <button
               key={path}
-              onClick={() => navigate(path)}
+              onClick={() => handleNavClick(path)}
               className={`relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition-all duration-200 ${
                 active
                   ? "text-primary scale-110"
