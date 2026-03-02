@@ -449,11 +449,11 @@ export default function GroupChat() {
       )}
       {isMember ? (
         canSend ? (
-          <div className="bg-background border-t border-border p-3 shrink-0 safe-bottom">
-            <div className="flex gap-2 max-w-lg mx-auto items-center">
+          <div className="bg-background border-t border-border p-2 shrink-0 safe-bottom">
+            <div className="flex gap-1.5 max-w-lg mx-auto items-center">
               <StickerPicker onSendSticker={sendSticker} />
-              <button onClick={() => fileInputRef.current?.click()} className="text-muted-foreground hover:text-foreground p-1">
-                <Image size={20} />
+              <button onClick={() => fileInputRef.current?.click()} className="shrink-0 text-muted-foreground hover:text-foreground p-1">
+                <Image size={18} />
               </button>
               <button
                 onClick={async () => {
@@ -481,20 +481,20 @@ export default function GroupChat() {
                     } catch { toast.error("Micro non disponible"); }
                   }
                 }}
-                className={`p-1 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground hover:text-foreground"}`}
+                className={`shrink-0 p-1 ${isRecording ? "text-destructive animate-pulse" : "text-muted-foreground hover:text-foreground"}`}
               >
-                {isRecording ? <Square size={20} /> : <Mic size={20} />}
+                {isRecording ? <Square size={18} /> : <Mic size={18} />}
               </button>
               <input
                 ref={inputRef}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={(e) => { if (e.key === "Enter") { setShowMentions(false); sendMessage(); } }}
-                className="flex-1 bg-secondary border border-border rounded-full px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder={editMsg ? "Modifier le message..." : "Écrire un message..."}
+                className="flex-1 min-w-0 bg-secondary border border-border rounded-full px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                placeholder={editMsg ? "Modifier..." : "Message..."}
               />
-              <button onClick={() => { setShowMentions(false); sendMessage(); }} disabled={!input.trim()} className="bg-primary text-primary-foreground p-2.5 rounded-full disabled:opacity-50">
-                <Send size={18} />
+              <button onClick={() => { setShowMentions(false); sendMessage(); }} disabled={!input.trim()} className="shrink-0 bg-primary text-primary-foreground p-2 rounded-full disabled:opacity-50">
+                <Send size={16} />
               </button>
             </div>
           </div>
