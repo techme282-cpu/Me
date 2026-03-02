@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send, Reply, Trash2, Eye, Pencil, X, Image, Mic, Square } from "lucide-react";
+import { ArrowLeft, Send, Reply, Trash2, Pencil, X, Image, Mic, Square } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -129,14 +129,7 @@ export default function ChatRoom() {
     setSelectedMsg(null);
   };
 
-  const handleViewOnce = async (msg: any) => {
-    if (msg.sender_id !== user?.id && !msg.is_viewed) {
-      await supabase.from("messages").update({ is_viewed: true }).eq("id", msg.id);
-      setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, is_viewed: true } : m));
-    }
-  };
-
-  const uploadAndSendMedia = async (viewOnce: boolean) => {
+  const uploadAndSendMedia = async () => {
     if (!pendingMedia || !user || !partnerId) return;
     const ext = pendingMedia.file.name.split(".").pop();
     const path = `chat/${partnerId}/${Date.now()}.${ext}`;
@@ -144,7 +137,7 @@ export default function ChatRoom() {
     if (error) { toast.error("Erreur upload"); return; }
     const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
     const tag = pendingMedia.isVideo ? "VIDEO" : "IMAGE";
-    await supabase.from("messages").insert({ sender_id: user.id, receiver_id: partnerId, content: `[${tag}:${urlData.publicUrl}]`, is_view_once: viewOnce });
+    await supabase.from("messages").insert({ sender_id: user.id, receiver_id: partnerId, content: `[${tag}:${urlData.publicUrl}]` });
     URL.revokeObjectURL(pendingMedia.url);
     setPendingMedia(null);
   };
@@ -196,9 +189,6 @@ export default function ChatRoom() {
           const mine = msg.sender_id === user?.id;
           const sticker = isSticker(msg.content);
           const replied = getRepliedMsg(msg.reply_to);
-          const isViewOnce = msg.is_view_once;
-          const viewOnceHidden = isViewOnce && !mine && msg.is_viewed;
-
           return (
             <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div
@@ -220,13 +210,8 @@ export default function ChatRoom() {
                       {mine && <span className="ml-1">{msg.is_read ? "✓✓" : "✓"}</span>}
                     </p>
                   </div>
-                ) : viewOnceHidden ? (
-                  <div className={`px-4 py-2.5 rounded-2xl text-sm bg-muted/50 text-muted-foreground italic ${mine ? "rounded-br-sm" : "rounded-bl-sm"}`}>
-                    <Eye size={14} className="inline mr-1" /> Message éphémère ouvert
-                  </div>
                 ) : (
                   <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${mine ? "bg-[hsl(195,100%,35%)] text-white rounded-br-sm" : "bg-card text-foreground border border-border/50 rounded-bl-sm"}`}>
-                    {isViewOnce && <Eye size={12} className="inline mr-1 opacity-60" />}
                     <MessageContent content={msg.content} isMine={mine} />
                     <div className={`flex items-center gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
                       <span className={`text-[10px] ${mine ? "text-white/50" : "text-muted-foreground"}`}>
@@ -252,11 +237,6 @@ export default function ChatRoom() {
                       {mine && (
                         <button onClick={(e) => { e.stopPropagation(); deleteMessage(msg.id); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors">
                           <Trash2 size={13} /> Supprimer
-                        </button>
-                      )}
-                      {isViewOnce && !mine && !msg.is_viewed && (
-                        <button onClick={(e) => { e.stopPropagation(); handleViewOnce(msg); setSelectedMsg(null); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-secondary transition-colors">
-                          <Eye size={13} /> Voir
                         </button>
                       )}
                     </div>
@@ -305,24 +285,12 @@ export default function ChatRoom() {
               )}
             </div>
             <div className="p-4 flex flex-col gap-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    await uploadAndSendMedia(false);
-                  }}
-                  className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-full text-sm font-medium"
-                >
-                  <Send size={14} className="inline mr-1.5" /> Envoyer
-                </button>
-                <button
-                  onClick={async () => {
-                    await uploadAndSendMedia(true);
-                  }}
-                  className="flex-1 bg-secondary text-foreground py-2.5 rounded-full text-sm font-medium border border-border flex items-center justify-center gap-1.5"
-                >
-                  <Eye size={14} /> Vue unique
-                </button>
-              </div>
+              <button
+                onClick={() => uploadAndSendMedia()}
+                className="w-full bg-primary text-primary-foreground py-2.5 rounded-full text-sm font-medium"
+              >
+                <Send size={14} className="inline mr-1.5" /> Envoyer
+              </button>
               <button onClick={() => { URL.revokeObjectURL(pendingMedia.url); setPendingMedia(null); }} className="text-muted-foreground text-sm py-1">
                 Annuler
               </button>
