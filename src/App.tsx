@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { setupNotificationChannel } from "@/lib/pushNotifications";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -61,6 +62,9 @@ function BackButtonHandler() {
 
   return null;
 }
+
+// Setup notification channel on app start
+setupNotificationChannel();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
