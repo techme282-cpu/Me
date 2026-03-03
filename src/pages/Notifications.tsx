@@ -71,7 +71,15 @@ export default function Notifications() {
     if (!user) return;
     const channel = supabase
       .channel("notifications")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => fetchNotifications())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => {
+        fetchNotifications();
+        // Play notification sound
+        try {
+          const audio = new Audio("/notification.mp3");
+          audio.volume = 0.5;
+          audio.play().catch(() => {});
+        } catch {}
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
