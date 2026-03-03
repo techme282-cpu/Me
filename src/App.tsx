@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -27,27 +27,24 @@ const queryClient = new QueryClient();
 
 // Android hardware back button handler
 function BackButtonHandler() {
-  const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
-    const handlePopState = () => {
-      // Let the browser handle it naturally via React Router
-    };
+    let backListener: any = null;
 
-    // For Capacitor: listen to the hardware back button
     const setupCapacitorBackButton = async () => {
       try {
-        // Dynamic import to avoid build errors when not in Capacitor
         const capacitorApp = await import("@capacitor/app" as string);
         const CapApp = capacitorApp.App;
         if (CapApp?.addListener) {
-          CapApp.addListener("backButton", ({ canGoBack }: { canGoBack: boolean }) => {
+          backListener = CapApp.addListener("backButton", () => {
             const mainRoutes = ["/", "/login"];
-            if (mainRoutes.includes(location.pathname) && !canGoBack) {
+            const isOnMain = mainRoutes.includes(window.location.pathname);
+            
+            // Only minimize if on a main route AND there's no history to go back to
+            if (isOnMain && window.history.length <= 2) {
               CapApp.minimizeApp();
             } else {
-              navigate(-1);
+              window.history.back();
             }
           });
         }
@@ -57,11 +54,10 @@ function BackButtonHandler() {
     };
 
     setupCapacitorBackButton();
-    window.addEventListener("popstate", handlePopState);
     return () => {
-      window.removeEventListener("popstate", handlePopState);
+      backListener?.remove?.();
     };
-  }, [navigate, location.pathname]);
+  }, []);
 
   return null;
 }
