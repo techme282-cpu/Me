@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import BottomNav from "@/components/BottomNav";
+import PullToRefresh from "@/components/PullToRefresh";
 import CertificationBadge from "@/components/CertificationBadge";
 import { MessageCircle, Search, Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -15,9 +16,15 @@ export default function Chat() {
   const [groups, setGroups] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"dms" | "groups">("dms");
+  const hasFetched = useRef(false);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchConversations(), fetchGroups()]);
+  }, [user]);
 
   useEffect(() => {
-    if (user) {
+    if (user && !hasFetched.current) {
+      hasFetched.current = true;
       fetchConversations();
       fetchGroups();
     }
@@ -140,6 +147,20 @@ export default function Chat() {
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
+  // Listen for nav-refresh (tap chat icon while on chat)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.path === "/chat") {
+        hasFetched.current = false;
+        fetchConversations();
+        fetchGroups();
+      }
+    };
+    window.addEventListener("nav-refresh", handler);
+    return () => window.removeEventListener("nav-refresh", handler);
+  }, [user]);
+
   const filteredConvos = conversations.filter((c) =>
     !search || (c.profile?.username?.toLowerCase().includes(search.toLowerCase()) || c.profile?.display_name?.toLowerCase().includes(search.toLowerCase()))
   );
@@ -184,7 +205,8 @@ export default function Chat() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto">
+      <PullToRefresh onRefresh={refreshAll} className="max-w-lg mx-auto">
+        <main>
         {tab === "dms" ? (
           filteredConvos.length === 0 ? (
             <div className="text-center py-20 space-y-3">
@@ -308,6 +330,7 @@ export default function Chat() {
           )
         )}
       </main>
+      </PullToRefresh>
 
       <BottomNav />
     </div>
