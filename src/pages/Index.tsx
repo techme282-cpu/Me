@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/auth";
 import { Navigate } from "react-router-dom";
-import Home from "./Home";
+import MainLayout from "@/components/MainLayout";
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -17,7 +17,7 @@ const Index = () => {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  return <Home />;
+  return <MainLayout />;
 };
 
 export default Index;
